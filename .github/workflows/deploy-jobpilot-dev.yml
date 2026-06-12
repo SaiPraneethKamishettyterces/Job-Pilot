@@ -1,0 +1,105 @@
+name: Deploy JobPilot — Dev
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "server/**"
+      - "prisma/**"
+      - "Dockerfile"
+      - "cloudbuild.yaml"
+      - "package*.json"
+      - "tsconfig*.json"
+      - "vite.config.*"
+
+env:
+  REGION: us-central1
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID_DEV }}
+  SERVICE: jobpilot-dev
+  IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID_DEV }}/jobpilot/app
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT_DEV }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build image via Cloud Build
+        run: |
+          gcloud builds submit \
+            --config=cloudbuild.yaml \
+            --substitutions=_IMAGE=${{ env.IMAGE }} \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Run database migrations
+        run: |
+          # Create or update the migration job, then execute it
+          gcloud run jobs describe jobpilot-migrate-dev \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} > /dev/null 2>&1 && \
+          gcloud run jobs update jobpilot-migrate-dev \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} || \
+          gcloud run jobs create jobpilot-migrate-dev \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --set-cloudsql-instances=${{ vars.CLOUD_SQL_CONNECTION_DEV }} \
+            --set-secrets=DATABASE_URL=jobpilot-database-url:latest \
+            --command=node \
+            --args=node_modules/.bin/prisma,migrate,deploy \
+            --max-retries=1 \
+            --project=${{ env.PROJECT_ID }}
+          gcloud run jobs execute jobpilot-migrate-dev \
+            --region=${{ env.REGION }} \
+            --wait \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --service-account=${{ vars.CLOUD_RUN_SA_DEV }} \
+            --add-cloudsql-instances=${{ vars.CLOUD_SQL_CONNECTION_DEV }} \
+            --set-secrets=DATABASE_URL=jobpilot-database-url:latest,JWT_SECRET=jobpilot-jwt-secret:latest,ANTHROPIC_API_KEY=jobpilot-anthropic-api-key:latest \
+            --set-env-vars=NODE_ENV=production,GCS_BUCKET_NAME=${{ vars.GCS_RESUMES_BUCKET_DEV }},UI_ORIGIN=* \
+            --min-instances=0 \
+            --max-instances=3 \
+            --memory=512Mi \
+            --cpu=1 \
+            --port=8080 \
+            --network=${{ vars.VPC_NETWORK_DEV }} \
+            --subnet=${{ vars.VPC_SUBNET_DEV }} \
+            --vpc-egress=private-ranges-only \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Smoke test
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --format='value(status.url)')
+          echo "Service URL: $URL"
+          curl --fail --silent --max-time 30 "$URL/health" | grep '"status":"ok"'
+          echo "Smoke test passed"

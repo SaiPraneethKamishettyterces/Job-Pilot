@@ -10,6 +10,8 @@ import {
   Settings,
   LogOut,
   Sparkles,
+  Search,
+  UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -19,10 +21,12 @@ import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/jobs", icon: Search, label: "Jobs" },
   { to: "/runs", icon: Play, label: "Runs" },
   { to: "/applications", icon: Briefcase, label: "Applications" },
   { to: "/review", icon: CheckSquare, label: "Review Queue" },
-  { to: "/resume", icon: FileText, label: "Resume & Profile" },
+  { to: "/resume", icon: FileText, label: "Resume" },
+  { to: "/profile", icon: UserCircle, label: "Profile" },
   { to: "/analytics", icon: BarChart2, label: "Analytics" },
 ];
 

@@ -1,0 +1,36 @@
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/${PROJECT_ID}/jobpilot/app
+
+steps:
+  - id: pull-cache
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - docker pull ${_IMAGE}:latest || true
+
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --cache-from=${_IMAGE}:latest
+      - --build-arg=BUILD_SHA=$COMMIT_SHA
+      - --tag=${_IMAGE}:$COMMIT_SHA
+      - --tag=${_IMAGE}:latest
+      - .
+
+  - id: push-sha
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_IMAGE}:$COMMIT_SHA"]
+
+  - id: push-latest
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_IMAGE}:latest"]
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - ${_IMAGE}:$COMMIT_SHA
+  - ${_IMAGE}:latest
