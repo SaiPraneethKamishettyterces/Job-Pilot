@@ -1,0 +1,349 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  passwordHash   String?
+  authProviderId String?  @unique
+  avatarUrl      String?
+  onboardingDone Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  profile        UserProfile?
+  preferences    UserPreference?
+  resumes        Resume[]
+  runs           ApplicationRun[]
+  applications   Application[]
+  usageEvents    AIUsageEvent[]
+  subscription   Subscription?
+}
+
+// ─── Profile ─────────────────────────────────────────────────────────────────
+
+model UserProfile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName         String
+  phone            String?
+  location         String?
+  workAuthorization String?
+  yearsExperience  Int?
+  linkedinUrl      String?
+  githubUrl        String?
+  portfolioUrl     String?
+  summary          String?  @db.Text
+  skillsJson       Json     @default("[]")
+  educationJson    Json     @default("[]")
+  experienceJson   Json     @default("[]")
+  projectsJson     Json     @default("[]")
+  certificationsJson Json   @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model UserPreference {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRolesJson      Json     @default("[]")
+  targetCompaniesJson  Json     @default("[]")
+  blockedCompaniesJson Json     @default("[]")
+  locationsJson        Json     @default("[]")
+  remotePreference     String   @default("any")
+  minSalary            Int?
+  maxSalary            Int?
+  yearsExperienceTarget Int?
+  applicationsPerDay   Int      @default(10)
+  approvalMode         ApprovalMode @default(ALWAYS_REVIEW)
+  matchThreshold       Int      @default(70)
+  atsPreferencesJson   Json     @default("{}")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+enum ApprovalMode {
+  AUTO_APPLY
+  ASSISTED_APPLY
+  ALWAYS_REVIEW
+  DRAFT_ONLY
+}
+
+// ─── Resume ──────────────────────────────────────────────────────────────────
+
+model Resume {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName         String
+  originalFileUrl  String
+  fileType         String
+  rawText          String?         @db.Text
+  parsedJson       Json?
+  isPrimary        Boolean         @default(false)
+  version          Int             @default(1)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  versions         ResumeVersion[]
+  applications     Application[]
+}
+
+model ResumeVersion {
+  id         String   @id @default(cuid())
+  resumeId   String
+  resume     Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  version    Int
+  fileUrl    String
+  notes      String?
+  createdAt  DateTime @default(now())
+}
+
+// ─── Jobs ────────────────────────────────────────────────────────────────────
+
+model JobSource {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  baseUrl   String?
+  platform  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  jobs      Job[]
+}
+
+model Job {
+  id                String      @id @default(cuid())
+  sourceId          String?
+  source            JobSource?  @relation(fields: [sourceId], references: [id])
+  externalId        String?
+  jobUrl            String?
+  title             String
+  company           String
+  location          String?
+  isRemote          Boolean?
+  salaryMin         Int?
+  salaryMax         Int?
+  salaryCurrency    String?
+  description       String?     @db.Text
+  requirementsJson  Json        @default("[]")
+  skillsJson        Json        @default("[]")
+  experienceMin     Int?
+  experienceMax     Int?
+  atsPlatform       String?
+  workAuthorization String?
+  postedAt          DateTime?
+  expiresAt         DateTime?
+  rawJson           Json?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  matches           JobMatch[]
+  applications      Application[]
+
+  @@unique([company, externalId])
+}
+
+model JobMatch {
+  id          String   @id @default(cuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId      String
+  score       Int
+  decision    String
+  reasonsJson Json     @default("[]")
+  risksJson   Json     @default("[]")
+  createdAt   DateTime @default(now())
+
+  @@unique([jobId, userId])
+}
+
+// ─── Application Run ─────────────────────────────────────────────────────────
+
+model ApplicationRun {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status            RunStatus @default(CREATED)
+  jobsDiscovered    Int       @default(0)
+  jobsShortlisted   Int       @default(0)
+  applicationsTotal Int       @default(0)
+  applicationsDone  Int       @default(0)
+  errorMessage      String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  applications      Application[]
+  usageEvents       AIUsageEvent[]
+}
+
+enum RunStatus {
+  CREATED
+  DISCOVERING_JOBS
+  PARSING_JOBS
+  SCORING
+  GENERATING_DOCUMENTS
+  WAITING_FOR_APPROVAL
+  APPLYING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ─── Application ─────────────────────────────────────────────────────────────
+
+model Application {
+  id                     String            @id @default(cuid())
+  userId                 String
+  user                   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runId                  String?
+  run                    ApplicationRun?   @relation(fields: [runId], references: [id])
+  jobId                  String?
+  job                    Job?              @relation(fields: [jobId], references: [id])
+  resumeId               String?
+  resume                 Resume?           @relation(fields: [resumeId], references: [id])
+  company                String
+  roleTitle              String
+  jobUrl                 String?
+  atsPlatform            String?
+  matchScore             Int?
+  status                 ApplicationStatus @default(DISCOVERED)
+  applyMode              ApprovalMode?
+  tailoredResumeUrl      String?
+  coverLetterUrl         String?
+  coldEmailText          String?           @db.Text
+  hiringManagerEmail     String?
+  submissionConfirmation String?
+  failureReason          String?
+  followUpDate           DateTime?
+  notes                  String?           @db.Text
+  appliedAt              DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  documents              ApplicationDocument[]
+  answers                ApplicationAnswer[]
+  contacts               RecruiterContact[]
+  events                 ApplicationEvent[]
+  usageEvents            AIUsageEvent[]
+}
+
+enum ApplicationStatus {
+  DISCOVERED
+  SHORTLISTED
+  GENERATED
+  NEEDS_APPROVAL
+  APPROVED
+  APPLIED
+  ASSISTED_REQUIRED
+  DRAFT_ONLY
+  DECLINED
+  FAILED
+  ARCHIVED
+  FOLLOW_UP_DUE
+}
+
+model ApplicationDocument {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  type          String
+  fileUrl       String?
+  content       String?     @db.Text
+  version       Int         @default(1)
+  createdAt     DateTime    @default(now())
+}
+
+model ApplicationAnswer {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  question      String      @db.Text
+  answer        String      @db.Text
+  isSensitive   Boolean     @default(false)
+  approved      Boolean?
+  createdAt     DateTime    @default(now())
+}
+
+model RecruiterContact {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  name          String?
+  title         String?
+  email         String?
+  linkedinUrl   String?
+  source        String?
+  createdAt     DateTime    @default(now())
+}
+
+model ApplicationEvent {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  type          String
+  description   String?
+  metadata      Json?
+  createdAt     DateTime    @default(now())
+}
+
+// ─── AI Usage ────────────────────────────────────────────────────────────────
+
+model AIUsageEvent {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runId            String?
+  run              ApplicationRun? @relation(fields: [runId], references: [id])
+  applicationId    String?
+  application      Application?    @relation(fields: [applicationId], references: [id])
+  featureName      String
+  model            String
+  inputTokens      Int             @default(0)
+  outputTokens     Int             @default(0)
+  cacheReadTokens  Int             @default(0)
+  estimatedCostUsd Float           @default(0)
+  createdAt        DateTime        @default(now())
+}
+
+// ─── Billing ─────────────────────────────────────────────────────────────────
+
+model Plan {
+  id                   String   @id @default(cuid())
+  name                 String   @unique
+  slug                 String   @unique
+  priceMonthly         Float
+  priceYearly          Float?
+  applicationsPerMonth Int
+  tailoringsPerMonth   Int
+  automationEnabled    Boolean  @default(false)
+  analyticsEnabled     Boolean  @default(false)
+  featuresJson         Json     @default("[]")
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  subscriptions        Subscription[]
+}
+
+model Subscription {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId             String
+  plan               Plan      @relation(fields: [planId], references: [id])
+  stripeCustomerId   String?   @unique
+  stripeSubId        String?   @unique
+  status             String    @default("active")
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
