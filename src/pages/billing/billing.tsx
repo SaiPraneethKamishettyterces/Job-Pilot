@@ -97,11 +97,7 @@ export function BillingPage() {
                     </li>
                   ))}
                 </ul>
-                <Button
-                  className="w-full"
-                  variant={plan.current ? "outline" : "default"}
-                  disabled={plan.current}
-                >
+                <Button className="w-full" variant={plan.current ? "outline" : "default"} disabled={plan.current}>
                   {plan.cta}
                 </Button>
               </CardContent>

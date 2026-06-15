@@ -1,23 +1,18 @@
 import { useState } from "react";
-import { ExternalLink, Filter, Search } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ExternalLink, Filter, Search, Loader2, Archive, Briefcase } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatRelativeDate } from "@/lib/utils";
+import { getApplications, archiveApplication } from "@/services/api";
 import type { Application, ApplicationStatus } from "@/types";
-
-const MOCK_APPS: Application[] = [
-  { id: "1", userId: "u1", company: "Stripe", roleTitle: "Senior Software Engineer", jobUrl: "https://stripe.com/jobs/1", atsPlatform: "Greenhouse", matchScore: 92, status: "APPLIED", applyMode: "AUTO_APPLY", followUpDate: new Date(Date.now() + 7 * 86400000).toISOString(), createdAt: new Date(Date.now() - 2 * 3600000).toISOString(), updatedAt: new Date().toISOString() },
-  { id: "2", userId: "u1", company: "Linear", roleTitle: "Staff Engineer", atsPlatform: "Ashby", matchScore: 88, status: "NEEDS_APPROVAL", createdAt: new Date(Date.now() - 4 * 3600000).toISOString(), updatedAt: new Date().toISOString() },
-  { id: "3", userId: "u1", company: "Vercel", roleTitle: "Full Stack Engineer", atsPlatform: "Lever", matchScore: 85, status: "GENERATED", createdAt: new Date(Date.now() - 6 * 3600000).toISOString(), updatedAt: new Date().toISOString() },
-  { id: "4", userId: "u1", company: "Notion", roleTitle: "Senior Engineer", atsPlatform: "Greenhouse", matchScore: 79, status: "APPLIED", createdAt: new Date(Date.now() - 86400000).toISOString(), updatedAt: new Date().toISOString() },
-  { id: "5", userId: "u1", company: "Figma", roleTitle: "Frontend Engineer", atsPlatform: "Workday", matchScore: 74, status: "SHORTLISTED", createdAt: new Date(Date.now() - 86400000).toISOString(), updatedAt: new Date().toISOString() },
-  { id: "6", userId: "u1", company: "Discord", roleTitle: "Backend Engineer", atsPlatform: "Lever", matchScore: 81, status: "DECLINED", createdAt: new Date(Date.now() - 2 * 86400000).toISOString(), updatedAt: new Date().toISOString() },
-  { id: "7", userId: "u1", company: "Shopify", roleTitle: "Platform Engineer", atsPlatform: "Workday", matchScore: 70, status: "ARCHIVED", createdAt: new Date(Date.now() - 3 * 86400000).toISOString(), updatedAt: new Date().toISOString() },
-];
 
 const STATUS_CONFIG: Record<ApplicationStatus, { label: string; variant: "default" | "success" | "warning" | "info" | "secondary" | "destructive" | "outline" }> = {
   DISCOVERED: { label: "Discovered", variant: "secondary" },
@@ -37,22 +32,43 @@ const STATUS_CONFIG: Record<ApplicationStatus, { label: string; variant: "defaul
 export function ApplicationsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const queryClient = useQueryClient();
 
-  const filtered = MOCK_APPS.filter((a) => {
-    const matchesSearch =
-      a.company.toLowerCase().includes(search.toLowerCase()) ||
-      a.roleTitle.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "ALL" || a.status === statusFilter;
-    return matchesSearch && matchesStatus;
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["applications", statusFilter, search],
+    queryFn: () =>
+      getApplications({
+        status: statusFilter !== "ALL" ? statusFilter : undefined,
+        search: search.trim() || undefined,
+      }),
+    staleTime: 30_000,
   });
+
+  const archiveMutation = useMutation({
+    mutationFn: archiveApplication,
+    onSuccess: () => {
+      toast.success("Application archived");
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+    },
+    onError: () => toast.error("Failed to archive application"),
+  });
+
+  const applications: Application[] = data?.applications ?? [];
+  const total = data?.total ?? 0;
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-muted-foreground">{MOCK_APPS.length} total applications</p>
+          <h2 className="text-2xl font-bold">Applications</h2>
+          {isLoading ? (
+            <Skeleton className="h-4 w-32 mt-1" />
+          ) : (
+            <p className="text-sm text-muted-foreground mt-0.5">{total} total application{total !== 1 ? "s" : ""}</p>
+          )}
         </div>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" disabled>
           <Filter className="h-4 w-4" />
           Export
         </Button>
@@ -80,79 +96,135 @@ export function ApplicationsPage() {
             <SelectItem value="GENERATED">Generated</SelectItem>
             <SelectItem value="SHORTLISTED">Shortlisted</SelectItem>
             <SelectItem value="DECLINED">Declined</SelectItem>
+            <SelectItem value="FOLLOW_UP_DUE">Follow Up Due</SelectItem>
             <SelectItem value="ARCHIVED">Archived</SelectItem>
             <SelectItem value="FAILED">Failed</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
+      {isError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Failed to load applications — make sure the server is running and DATABASE_URL is configured.
+        </div>
+      )}
+
       {/* Table */}
       <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Company / Role</TableHead>
-              <TableHead>ATS</TableHead>
-              <TableHead>Score</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Mode</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Follow-up</TableHead>
-              <TableHead className="w-10"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((app) => {
-              const statusCfg = STATUS_CONFIG[app.status];
-              return (
-                <TableRow key={app.id}>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium text-sm">{app.company}</p>
-                      <p className="text-xs text-muted-foreground">{app.roleTitle}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-xs text-muted-foreground">{app.atsPlatform ?? "—"}</span>
-                  </TableCell>
-                  <TableCell>
-                    {app.matchScore ? (
-                      <Badge variant={app.matchScore >= 80 ? "success" : app.matchScore >= 60 ? "warning" : "destructive"}>
-                        {app.matchScore}%
-                      </Badge>
-                    ) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-xs text-muted-foreground">
-                      {app.applyMode?.replace("_", " ").toLowerCase() ?? "—"}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-xs text-muted-foreground">{formatRelativeDate(app.createdAt)}</span>
-                  </TableCell>
-                  <TableCell>
-                    {app.followUpDate ? (
-                      <span className="text-xs text-warning">{formatRelativeDate(app.followUpDate)}</span>
-                    ) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    {app.jobUrl && (
-                      <a href={app.jobUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                      </a>
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        {filtered.length === 0 && (
-          <div className="py-12 text-center text-muted-foreground text-sm">
-            No applications match your filters
+        {isLoading ? (
+          <div className="divide-y">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3">
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-28" />
+                </div>
+                <Skeleton className="h-6 w-16" />
+                <Skeleton className="h-6 w-16" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Company / Role</TableHead>
+                <TableHead>ATS</TableHead>
+                <TableHead>Score</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Mode</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Follow-up</TableHead>
+                <TableHead className="w-16"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {applications.map((app) => {
+                const statusCfg = STATUS_CONFIG[app.status];
+                return (
+                  <TableRow key={app.id}>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium text-sm">{app.company}</p>
+                        <p className="text-xs text-muted-foreground">{app.roleTitle}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs text-muted-foreground">{app.atsPlatform ?? "—"}</span>
+                    </TableCell>
+                    <TableCell>
+                      {app.matchScore != null ? (
+                        <Badge variant={app.matchScore >= 80 ? "success" : app.matchScore >= 60 ? "warning" : "destructive"}>
+                          {app.matchScore}%
+                        </Badge>
+                      ) : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs text-muted-foreground">
+                        {app.applyMode?.replace(/_/g, " ").toLowerCase() ?? "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs text-muted-foreground">{formatRelativeDate(app.createdAt)}</span>
+                    </TableCell>
+                    <TableCell>
+                      {app.followUpDate ? (
+                        <span className="text-xs text-warning">{formatRelativeDate(app.followUpDate)}</span>
+                      ) : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {app.jobUrl && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <a href={app.jobUrl} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-muted transition-colors">
+                                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                              </a>
+                            </TooltipTrigger>
+                            <TooltipContent>View job posting</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {app.status !== "ARCHIVED" && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                onClick={() => archiveMutation.mutate(app.id)}
+                                disabled={archiveMutation.isPending}
+                              >
+                                {archiveMutation.isPending ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Archive className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Archive</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+
+        {!isLoading && !isError && applications.length === 0 && (
+          <div className="py-16 text-center">
+            <Briefcase className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm font-medium mb-1">No applications yet</p>
+            <p className="text-xs text-muted-foreground">
+              {statusFilter !== "ALL" || search
+                ? "Try clearing filters"
+                : "Start a run to begin discovering and applying to jobs"}
+            </p>
           </div>
         )}
       </Card>

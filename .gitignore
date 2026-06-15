@@ -35,3 +35,6 @@ uploads/
 
 # Prisma
 prisma/migrations/
+
+# Scratch / working notes
+status_temp.md

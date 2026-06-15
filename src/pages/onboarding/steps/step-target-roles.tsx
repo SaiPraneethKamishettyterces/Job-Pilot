@@ -57,6 +57,7 @@ function TagInput({
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); add(input); }
           }}
+          onBlur={() => add(input)}
         />
         <Button type="button" variant="outline" size="icon" onClick={() => add(input)}>
           <Plus className="h-4 w-4" />

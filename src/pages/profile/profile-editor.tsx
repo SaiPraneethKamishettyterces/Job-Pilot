@@ -327,7 +327,7 @@ function PreferencesTab({
           <Label>Remote Preference</Label>
           <Select
             value={form.remotePreference}
-            onValueChange={(v) => setForm((f) => ({ ...f, remotePreference: v }))}
+            onValueChange={(v) => setForm((f) => ({ ...f, remotePreference: v as typeof f.remotePreference }))}
           >
             <SelectTrigger>
               <SelectValue />
@@ -345,7 +345,7 @@ function PreferencesTab({
           <Label>Approval Mode</Label>
           <Select
             value={form.approvalMode}
-            onValueChange={(v) => setForm((f) => ({ ...f, approvalMode: v }))}
+            onValueChange={(v) => setForm((f) => ({ ...f, approvalMode: v as typeof f.approvalMode }))}
           >
             <SelectTrigger>
               <SelectValue />

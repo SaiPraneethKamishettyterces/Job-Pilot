@@ -1,34 +1,14 @@
-import { Briefcase, Play, CheckSquare, TrendingUp, Clock, Target, DollarSign, Zap } from "lucide-react";
+import { Briefcase, Play, CheckSquare, TrendingUp, Clock, Target, DollarSign, Zap, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { useQuery } from "@tanstack/react-query";
 import { formatRelativeDate } from "@/lib/utils";
-
-const MOCK_STATS = {
-  jobsFoundToday: 47,
-  shortlisted: 12,
-  applied: 8,
-  needsApproval: 3,
-  weeklyTotal: 34,
-  matchRate: 68,
-  tokenCostToday: 0.47,
-  planLimit: 100,
-  planUsed: 34,
-};
-
-const MOCK_RECENT: Array<{
-  id: string; company: string; role: string; score: number;
-  status: string; date: string; ats: string;
-}> = [
-  { id: "1", company: "Stripe", role: "Senior Software Engineer", score: 92, status: "APPLIED", date: new Date(Date.now() - 2 * 3600000).toISOString(), ats: "Greenhouse" },
-  { id: "2", company: "Linear", role: "Staff Engineer", score: 88, status: "NEEDS_APPROVAL", date: new Date(Date.now() - 4 * 3600000).toISOString(), ats: "Ashby" },
-  { id: "3", company: "Vercel", role: "Full Stack Engineer", score: 85, status: "GENERATED", date: new Date(Date.now() - 6 * 3600000).toISOString(), ats: "Lever" },
-  { id: "4", company: "Notion", role: "Senior Engineer", score: 79, status: "APPLIED", date: new Date(Date.now() - 86400000).toISOString(), ats: "Greenhouse" },
-  { id: "5", company: "Figma", role: "Frontend Engineer", score: 74, status: "SHORTLISTED", date: new Date(Date.now() - 86400000).toISOString(), ats: "Workday" },
-];
+import { getDashboardStats, type DashboardStats } from "@/services/api";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "success" | "warning" | "info" | "secondary" | "destructive" | "outline" }> = {
   APPLIED: { label: "Applied", variant: "success" },
@@ -37,6 +17,9 @@ const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "succe
   SHORTLISTED: { label: "Shortlisted", variant: "secondary" },
   FAILED: { label: "Failed", variant: "destructive" },
   DRAFT_ONLY: { label: "Draft", variant: "outline" },
+  APPROVED: { label: "Approved", variant: "success" },
+  DECLINED: { label: "Declined", variant: "secondary" },
+  ARCHIVED: { label: "Archived", variant: "secondary" },
 };
 
 function ScoreBadge({ score }: { score: number }) {
@@ -44,11 +27,42 @@ function ScoreBadge({ score }: { score: number }) {
   return <Badge variant={variant}>{score}%</Badge>;
 }
 
+function StatCard({ label, value, sub, icon: Icon, iconBg, isLoading }: {
+  label: string; value: string | number; sub: string | React.ReactNode;
+  icon: typeof Target; iconBg: string; isLoading: boolean;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm text-muted-foreground">{label}</span>
+          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${iconBg}`}>
+            <Icon className="h-4 w-4" />
+          </div>
+        </div>
+        {isLoading ? (
+          <Skeleton className="h-9 w-16 mb-1" />
+        ) : (
+          <div className="text-3xl font-bold">{value}</div>
+        )}
+        <div className="text-xs text-muted-foreground mt-1">{isLoading ? <Skeleton className="h-3 w-24" /> : sub}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function DashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const firstName = user?.name?.split(" ")[0] ?? "there";
-  const pctUsed = Math.round((MOCK_STATS.planUsed / MOCK_STATS.planLimit) * 100);
+
+  const { data: stats, isLoading, isError } = useQuery<DashboardStats>({
+    queryKey: ["stats"],
+    queryFn: getDashboardStats,
+    staleTime: 60_000,
+  });
+
+  const pctUsed = stats ? Math.round((stats.plan.used / stats.plan.limit) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -64,47 +78,38 @@ export function DashboardPage() {
         </Button>
       </div>
 
+      {isError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Could not load live stats — make sure the server is running and DATABASE_URL is configured.
+        </div>
+      )}
+
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">Jobs Found Today</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                <Target className="h-4 w-4 text-primary" />
-              </div>
-            </div>
-            <div className="text-3xl font-bold">{MOCK_STATS.jobsFoundToday}</div>
-            <p className="text-xs text-success mt-1">↑ 12 from yesterday</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">Shortlisted</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-warning/10">
-                <TrendingUp className="h-4 w-4 text-warning" />
-              </div>
-            </div>
-            <div className="text-3xl font-bold">{MOCK_STATS.shortlisted}</div>
-            <p className="text-xs text-muted-foreground mt-1">{MOCK_STATS.matchRate}% match rate</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">Applied</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-success/10">
-                <Briefcase className="h-4 w-4 text-success" />
-              </div>
-            </div>
-            <div className="text-3xl font-bold">{MOCK_STATS.applied}</div>
-            <p className="text-xs text-muted-foreground mt-1">{MOCK_STATS.weeklyTotal} this week</p>
-          </CardContent>
-        </Card>
-
+        <StatCard
+          label="Jobs Found Today"
+          value={stats?.jobsFoundToday ?? 0}
+          sub={stats ? `${stats.matchRate}% avg match rate` : ""}
+          icon={Target}
+          iconBg="bg-primary/10 text-primary"
+          isLoading={isLoading}
+        />
+        <StatCard
+          label="Shortlisted"
+          value={stats?.shortlisted ?? 0}
+          sub="Above your threshold"
+          icon={TrendingUp}
+          iconBg="bg-warning/10 text-warning"
+          isLoading={isLoading}
+        />
+        <StatCard
+          label="Applied"
+          value={stats?.applied ?? 0}
+          sub={stats ? `${stats.weeklyTotal} this week` : ""}
+          icon={Briefcase}
+          iconBg="bg-success/10 text-success"
+          isLoading={isLoading}
+        />
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-3">
@@ -113,8 +118,12 @@ export function DashboardPage() {
                 <CheckSquare className="h-4 w-4 text-destructive" />
               </div>
             </div>
-            <div className="text-3xl font-bold">{MOCK_STATS.needsApproval}</div>
-            {MOCK_STATS.needsApproval > 0 && (
+            {isLoading ? (
+              <Skeleton className="h-9 w-16 mb-1" />
+            ) : (
+              <div className="text-3xl font-bold">{stats?.needsApproval ?? 0}</div>
+            )}
+            {!isLoading && (stats?.needsApproval ?? 0) > 0 && (
               <Button
                 variant="link"
                 size="sm"
@@ -141,31 +150,53 @@ export function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="divide-y">
-                {MOCK_RECENT.map((app) => {
-                  const statusCfg = STATUS_CONFIG[app.status] ?? { label: app.status, variant: "secondary" as const };
-                  return (
-                    <div key={app.id} className="flex items-center justify-between px-6 py-3 hover:bg-muted/50 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium truncate">{app.role}</p>
-                          <ScoreBadge score={app.score} />
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-xs text-muted-foreground">{app.company}</p>
-                          <span className="text-xs text-muted-foreground">·</span>
-                          <p className="text-xs text-muted-foreground">{app.ats}</p>
-                          <span className="text-xs text-muted-foreground">·</span>
-                          <p className="text-xs text-muted-foreground">{formatRelativeDate(app.date)}</p>
-                        </div>
+              {isLoading ? (
+                <div className="divide-y">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="px-6 py-3 flex items-center gap-3">
+                      <div className="flex-1 space-y-1.5">
+                        <Skeleton className="h-4 w-48" />
+                        <Skeleton className="h-3 w-32" />
                       </div>
-                      <Badge variant={statusCfg.variant} className="ml-3 shrink-0">
-                        {statusCfg.label}
-                      </Badge>
+                      <Skeleton className="h-6 w-16" />
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              ) : (stats?.recentApplications?.length ?? 0) === 0 ? (
+                <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+                  No applications yet — start a run to get going.
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {stats!.recentApplications.map((app) => {
+                    const statusCfg = STATUS_CONFIG[app.status] ?? { label: app.status, variant: "secondary" as const };
+                    return (
+                      <div key={app.id} className="flex items-center justify-between px-6 py-3 hover:bg-muted/50 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium truncate">{app.roleTitle}</p>
+                            {app.matchScore != null && <ScoreBadge score={app.matchScore} />}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-xs text-muted-foreground">{app.company}</p>
+                            {app.atsPlatform && (
+                              <>
+                                <span className="text-xs text-muted-foreground">·</span>
+                                <p className="text-xs text-muted-foreground">{app.atsPlatform}</p>
+                              </>
+                            )}
+                            <span className="text-xs text-muted-foreground">·</span>
+                            <p className="text-xs text-muted-foreground">{formatRelativeDate(app.createdAt)}</p>
+                          </div>
+                        </div>
+                        <Badge variant={statusCfg.variant} className="ml-3 shrink-0">
+                          {statusCfg.label}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -176,19 +207,39 @@ export function DashboardPage() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Plan Usage</CardTitle>
-              <CardDescription>Starter Plan · {MOCK_STATS.planUsed}/{MOCK_STATS.planLimit} applications</CardDescription>
+              {isLoading ? (
+                <Skeleton className="h-4 w-40" />
+              ) : (
+                <CardDescription>
+                  {stats?.plan.name ?? "Free"} Plan · {stats?.plan.used ?? 0}/{stats?.plan.limit ?? 5} applications
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="space-y-3">
-              <Progress value={pctUsed} />
+              {isLoading ? (
+                <Skeleton className="h-2 w-full rounded-full" />
+              ) : (
+                <Progress value={pctUsed} />
+              )}
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{MOCK_STATS.planUsed} used</span>
-                <span>{MOCK_STATS.planLimit - MOCK_STATS.planUsed} remaining</span>
+                {isLoading ? (
+                  <Skeleton className="h-3 w-32" />
+                ) : (
+                  <>
+                    <span>{stats?.plan.used ?? 0} used</span>
+                    <span>{(stats?.plan.limit ?? 5) - (stats?.plan.used ?? 0)} remaining</span>
+                  </>
+                )}
               </div>
               <div className="flex items-center gap-2 pt-1">
                 <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">
-                  ${MOCK_STATS.tokenCostToday.toFixed(2)} AI cost today
-                </span>
+                {isLoading ? (
+                  <Skeleton className="h-3 w-28" />
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    ${(stats?.tokenCostToday ?? 0).toFixed(2)} AI cost today
+                  </span>
+                )}
               </div>
               <Button variant="outline" size="sm" className="w-full" onClick={() => navigate("/billing")}>
                 Upgrade plan
@@ -212,12 +263,17 @@ export function DashboardPage() {
               </Button>
               <Button variant="outline" className="w-full justify-start gap-3" onClick={() => navigate("/review")}>
                 <CheckSquare className="h-4 w-4 text-warning" />
-                Review queue {MOCK_STATS.needsApproval > 0 && `(${MOCK_STATS.needsApproval})`}
+                Review queue {(stats?.needsApproval ?? 0) > 0 && `(${stats!.needsApproval})`}
               </Button>
               <Button variant="outline" className="w-full justify-start gap-3" onClick={() => navigate("/applications")}>
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 Follow-up tracker
               </Button>
+              {isLoading && (
+                <div className="flex items-center justify-center py-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

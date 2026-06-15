@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -27,6 +26,8 @@ model User {
   applications   Application[]
   usageEvents    AIUsageEvent[]
   subscription   Subscription?
+  jobs           Job[]
+  subscriptionEvents SubscriptionEvent[]
 }
 
 // ─── Profile ─────────────────────────────────────────────────────────────────
@@ -121,35 +122,83 @@ model JobSource {
   jobs      Job[]
 }
 
+// T2 — job_candidates. A normalized job row produced by an ingestion run.
+// Rows are owned by a user (denormalized per the T2 design) so each user has
+// their own candidate set, deduped within their own rows via dedupeKey.
 model Job {
   id                String      @id @default(cuid())
+  userId            String?
+  user              User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runId             String?
+  run               ApplicationRun? @relation("RunJobs", fields: [runId], references: [id])
   sourceId          String?
   source            JobSource?  @relation(fields: [sourceId], references: [id])
+
+  // Source / provenance
+  sourceName        String?     // greenhouse | lever | manual | ...
+  sourceJobId       String?
   externalId        String?
   jobUrl            String?
+  applyUrl          String?
+  atsPlatform       String?     // greenhouse | lever | ashby | workday | unknown
+
+  // Core fields
   title             String
+  normalizedTitle   String?
   company           String
+  companyDomain     String?
+  department        String?
+  industry          String?
   location          String?
   isRemote          Boolean?
+  remoteType        String?     // onsite | hybrid | remote | unknown
+  employmentType    String?     // full_time | contract | internship | part_time | temporary
+  seniority         String?     // intern | entry | junior | mid | senior | lead | manager | unknown
+
+  // Compensation
   salaryMin         Int?
   salaryMax         Int?
   salaryCurrency    String?
+  salaryPeriod      String?     // yearly | hourly | monthly | unknown
+  salaryTextRaw     String?
+
+  // Work authorization
+  visaSponsored     Boolean?
+  workAuthorization String?
+  sponsorshipNotes  String?
+
+  // Extracted content
   description       String?     @db.Text
+  descriptionClean  String?     @db.Text
   requirementsJson  Json        @default("[]")
   skillsJson        Json        @default("[]")
+  toolsJson         Json        @default("[]")
   experienceMin     Int?
   experienceMax     Int?
-  atsPlatform       String?
-  workAuthorization String?
+
+  // Embedding (stubbed in base version — populated in the matching milestone)
+  embeddingJson     Json?
+
+  // Dedup / integrity
+  dedupeKey         String?
+  contentHash       String?
+
+  // Lifecycle
+  postingStatus     String?     // active | closed | unknown
   postedAt          DateTime?
   expiresAt         DateTime?
+  ingestedAt        DateTime?
   rawJson           Json?
+  schemaVersion     String?     @default("t2.v1")
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
+
   matches           JobMatch[]
   applications      Application[]
 
-  @@unique([company, externalId])
+  @@unique([userId, dedupeKey])
+  @@index([userId, runId])
+  @@index([company])
 }
 
 model JobMatch {
@@ -168,15 +217,24 @@ model JobMatch {
 
 // ─── Application Run ─────────────────────────────────────────────────────────
 
+// T3 — ingestion_runs. Tracks whether a job-ingestion workflow actually ran.
 model ApplicationRun {
   id                String    @id @default(cuid())
   userId            String
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   status            RunStatus @default(CREATED)
-  jobsDiscovered    Int       @default(0)
+
+  triggerType       String?   // payment_activated | manual_test | scheduled | retry
+  requestedSourcesJson Json   @default("[]")
+
+  jobsDiscovered    Int       @default(0)  // jobs found across all sources
+  jobsInserted      Int       @default(0)  // new T2 rows written
+  jobsUpdated       Int       @default(0)
+  duplicatesSkipped Int       @default(0)
   jobsShortlisted   Int       @default(0)
   applicationsTotal Int       @default(0)
   applicationsDone  Int       @default(0)
+
   errorMessage      String?
   startedAt         DateTime?
   completedAt       DateTime?
@@ -184,6 +242,7 @@ model ApplicationRun {
   updatedAt         DateTime  @updatedAt
   applications      Application[]
   usageEvents       AIUsageEvent[]
+  jobs              Job[]     @relation("RunJobs")
 }
 
 enum RunStatus {
@@ -338,12 +397,40 @@ model Subscription {
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   planId             String
   plan               Plan      @relation(fields: [planId], references: [id])
+  paymentProvider    String    @default("test")  // stripe | manual | test
   stripeCustomerId   String?   @unique
   stripeSubId        String?   @unique
-  status             String    @default("active")
+  status             String    @default("inactive") // inactive | trial | active | past_due | cancelled
   currentPeriodStart DateTime?
   currentPeriodEnd   DateTime?
   cancelAtPeriodEnd  Boolean   @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+}
+
+// T4 — subscription_events. Records WHY ingestion was triggered. The ingestion
+// worker is kicked off by a trusted backend payment event, never by the frontend.
+model SubscriptionEvent {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  paymentProvider   String    // stripe | manual | test
+  paymentCustomerId String?
+  subscriptionId    String?
+
+  eventType         String    // checkout_completed | payment_succeeded | subscription_activated | payment_failed | subscription_cancelled
+  oldStatus         String?
+  newStatus         String?
+
+  planName          String?
+  amountPaid        Float?
+  currency          String?
+
+  processingStatus  String    @default("processed") // received | processed | failed
+  rawEventJson      Json?
+  processedAt       DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([userId, newStatus])
 }

@@ -1,0 +1,1 @@
+../../../terces-ai-ops/commands/shared/technical/new-repo-init.md

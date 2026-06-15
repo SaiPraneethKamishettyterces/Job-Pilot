@@ -1,0 +1,1 @@
+../../../terces-ai-ops/commands/shared/business/market-analytics.md

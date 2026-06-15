@@ -24,11 +24,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const storedToken = localStorage.getItem(TOKEN_KEY);
     const storedUser = localStorage.getItem(USER_KEY);
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
+    if (!storedToken || !storedUser) {
+      setIsLoading(false);
+      return;
     }
-    setIsLoading(false);
+    // Optimistically restore, then validate the token against the backend. A
+    // token can be cryptographically valid but reference a user that no longer
+    // exists (e.g. the database was reset) — in that case we must clear the
+    // session, otherwise writes like onboarding hit a foreign-key violation.
+    setToken(storedToken);
+    setUser(JSON.parse(storedUser));
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", {
+          headers: { Authorization: `Bearer ${storedToken}` },
+        });
+        if (res.status === 401 || res.status === 404) {
+          // Ghost/expired session — sign out so the user logs in/signs up fresh.
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(USER_KEY);
+          setToken(null);
+          setUser(null);
+        } else if (res.ok) {
+          const fresh = await res.json();
+          localStorage.setItem(USER_KEY, JSON.stringify(fresh));
+          setUser(fresh);
+        }
+        // Other statuses (e.g. 503 DB down) are left as-is; don't sign out.
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   }, []);
 
   const login = async (email: string, password: string) => {

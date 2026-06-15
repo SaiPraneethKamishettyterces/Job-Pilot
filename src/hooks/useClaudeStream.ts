@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { streamApplication } from "../services/api.js";
+import { streamApplication } from "../services/api/index.js";
 import type { ApplyRequest, TokenSummary } from "../types/index.js";
 
 interface StreamState {

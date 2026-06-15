@@ -11,7 +11,10 @@ import {
   LogOut,
   Sparkles,
   Search,
+  Database,
   UserCircle,
+  HelpCircle,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +26,7 @@ const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/jobs", icon: Search, label: "Jobs" },
   { to: "/runs", icon: Play, label: "Runs" },
+  { to: "/candidates", icon: Database, label: "Candidates" },
   { to: "/applications", icon: Briefcase, label: "Applications" },
   { to: "/review", icon: CheckSquare, label: "Review Queue" },
   { to: "/resume", icon: FileText, label: "Resume" },
@@ -33,6 +37,8 @@ const navItems = [
 const secondaryNav = [
   { to: "/billing", icon: CreditCard, label: "Billing" },
   { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/help", icon: HelpCircle, label: "Help Center" },
+  { to: "/contact", icon: Mail, label: "Contact Us" },
 ];
 
 export function Sidebar() {

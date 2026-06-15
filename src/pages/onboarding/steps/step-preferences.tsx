@@ -34,6 +34,7 @@ export function StepPreferences({ data, onChange }: Props) {
             value={locInput}
             onChange={(e) => setLocInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLocation(); } }}
+            onBlur={addLocation}
           />
           <Button type="button" variant="outline" size="icon" onClick={addLocation}>
             <Plus className="h-4 w-4" />
