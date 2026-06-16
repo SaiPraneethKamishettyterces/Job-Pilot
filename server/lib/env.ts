@@ -18,4 +18,12 @@ export const env = {
   DATABASE_URL: optional("DATABASE_URL"),
   JWT_SECRET: optional("JWT_SECRET", "dev-secret-change-in-production"),
   NODE_ENV: optional("NODE_ENV", "development"),
+  // Artifact storage: local-disk directory for generated documents (resumes,
+  // packages). Empty → defaults to <repo>/artifacts. GCS_BUCKET_NAME is reserved
+  // for the future GCS-backed implementation of artifact-storage.ts.
+  STORAGE_DIR: optional("STORAGE_DIR"),
+  GCS_BUCKET_NAME: optional("GCS_BUCKET_NAME"),
+  // Browser automation: gate that actually submits forms. Off by default — the
+  // safety model is "prepare, the user submits" (mirrors the Python AUTO_SUBMIT).
+  AUTO_SUBMIT: optional("AUTO_SUBMIT", "false") === "true",
 };

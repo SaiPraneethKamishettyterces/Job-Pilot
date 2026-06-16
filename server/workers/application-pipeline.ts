@@ -1,0 +1,180 @@
+// Application pipeline worker — the end-to-end async run after ingestion.
+//
+// This is the TypeScript analog of Job_applying_agent's PreparationRunner.run_scan:
+// for each discovered job it scores the match, and for shortlisted jobs it creates
+// an Application and generates its documents (tailored resume, cover letter, cold
+// email, autofill package). It NEVER submits — it prepares applications to the
+// point a user can approve/submit, mirroring the "prepare, user submits" model.
+//
+// Run status flow: ...COMPLETED(ingestion) -> SCORING -> GENERATING_DOCUMENTS ->
+// WAITING_FOR_APPROVAL | COMPLETED.
+import { prisma } from "../lib/db.js";
+import { logger } from "../lib/logger.js";
+import { runIngestion } from "../services/ingestion/ingestion-orchestrator.js";
+import { scoreJobMatch, type ProfileSnapshot } from "../services/matching/match-scorer.js";
+import type { ParsedJob } from "../services/job-discovery/job-parser.js";
+import { generateApplicationDocuments } from "../services/application/application-generator.js";
+
+const WORKER_NAME = "application-pipeline-worker";
+
+async function loadSnapshot(userId: string): Promise<ProfileSnapshot> {
+  const [profile, prefs] = await Promise.all([
+    prisma.userProfile.findUnique({ where: { userId } }),
+    prisma.userPreference.findUnique({ where: { userId } }),
+  ]);
+  return {
+    skills: (profile?.skillsJson as string[] | undefined) ?? [],
+    yearsExperience: profile?.yearsExperience ?? null,
+    summary: profile?.summary ?? null,
+    workAuthorization: profile?.workAuthorization ?? null,
+    targetRoles: (prefs?.targetRolesJson as string[] | undefined) ?? [],
+    blockedCompanies: (prefs?.blockedCompaniesJson as string[] | undefined) ?? [],
+    remotePreference: prefs?.remotePreference ?? "any",
+    minSalary: prefs?.minSalary ?? null,
+    matchThreshold: prefs?.matchThreshold ?? 70,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toParsedJob(job: any): ParsedJob {
+  return {
+    title: job.title,
+    company: job.company,
+    location: job.location ?? null,
+    isRemote: job.isRemote ?? false,
+    salaryMin: job.salaryMin ?? null,
+    salaryMax: job.salaryMax ?? null,
+    salaryCurrency: job.salaryCurrency ?? null,
+    description: job.descriptionClean ?? job.description ?? "",
+    requirements: (job.requirementsJson as string[]) ?? [],
+    skills: (job.skillsJson as string[]) ?? [],
+    experienceMin: job.experienceMin ?? null,
+    experienceMax: job.experienceMax ?? null,
+    atsPlatform: job.atsPlatform ?? null,
+    workAuthorization: job.workAuthorization ?? null,
+    jobUrl: job.jobUrl ?? null,
+  };
+}
+
+/**
+ * Score the run's discovered jobs and generate applications for shortlisted ones.
+ * Assumes ingestion has already populated Job rows for the run. Updates run
+ * metrics and status; never throws (records failure on the run).
+ */
+export async function runApplicationPipeline(runId: string): Promise<void> {
+  const run = await prisma.applicationRun.findUnique({ where: { id: runId } });
+  if (!run) {
+    logger.error({ runId }, "Application pipeline: run not found");
+    return;
+  }
+  const userId = run.userId;
+
+  try {
+    const snapshot = await loadSnapshot(userId);
+    const prefs = await prisma.userPreference.findUnique({ where: { userId } });
+    const cap = Math.max(1, prefs?.applicationsPerDay ?? 10);
+    const primaryResume = await prisma.resume.findFirst({
+      where: { userId },
+      orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
+    });
+
+    const jobs = await prisma.job.findMany({ where: { runId, userId }, orderBy: { ingestedAt: "desc" } });
+
+    await prisma.applicationRun.update({ where: { id: runId }, data: { status: "SCORING" } });
+
+    let shortlisted = 0;
+    const shortlist: Array<{ jobId: string; score: number; company: string; title: string; jobUrl: string | null; atsPlatform: string | null }> = [];
+
+    for (const job of jobs) {
+      const result = await scoreJobMatch(toParsedJob(job), snapshot);
+      await prisma.jobMatch.upsert({
+        where: { jobId_userId: { jobId: job.id, userId } },
+        create: {
+          jobId: job.id, userId, score: result.score, decision: result.decision,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          reasonsJson: result.reasons as any, risksJson: result.risks as any,
+        },
+        update: {
+          score: result.score, decision: result.decision,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          reasonsJson: result.reasons as any, risksJson: result.risks as any,
+        },
+      });
+      if (result.decision === "SHORTLIST" && shortlist.length < cap) {
+        shortlisted++;
+        shortlist.push({
+          jobId: job.id, score: result.score, company: job.company, title: job.title,
+          jobUrl: job.applyUrl ?? job.jobUrl ?? null, atsPlatform: job.atsPlatform ?? null,
+        });
+      }
+    }
+
+    await prisma.applicationRun.update({
+      where: { id: runId },
+      data: { status: "GENERATING_DOCUMENTS", jobsShortlisted: shortlisted, applicationsTotal: shortlist.length },
+    });
+
+    let done = 0;
+    let needsApproval = 0;
+    for (const item of shortlist) {
+      // Skip if an application for this job already exists in the run.
+      const existing = await prisma.application.findFirst({ where: { userId, jobId: item.jobId, runId } });
+      if (existing) continue;
+
+      const application = await prisma.application.create({
+        data: {
+          userId, runId, jobId: item.jobId,
+          resumeId: primaryResume?.id ?? null,
+          company: item.company, roleTitle: item.title,
+          jobUrl: item.jobUrl, atsPlatform: item.atsPlatform,
+          matchScore: item.score, status: "SHORTLISTED",
+        },
+      });
+      try {
+        const gen = await generateApplicationDocuments(application.id);
+        done++;
+        if (gen.status === "NEEDS_APPROVAL") needsApproval++;
+      } catch (err) {
+        logger.warn({ runId, applicationId: application.id, err: String(err) }, "document generation failed");
+        await prisma.application.update({
+          where: { id: application.id },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data: { status: "FAILED" as any, failureReason: String(err) },
+        });
+      }
+    }
+
+    await prisma.applicationRun.update({
+      where: { id: runId },
+      data: {
+        status: needsApproval > 0 ? "WAITING_FOR_APPROVAL" : "COMPLETED",
+        applicationsDone: done,
+        completedAt: new Date(),
+      },
+    });
+    logger.info({ runId, userId, shortlisted, applications: done, needsApproval }, "Application pipeline completed");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ runId, userId, err: msg }, "Application pipeline failed");
+    await prisma.applicationRun
+      .update({ where: { id: runId }, data: { status: "FAILED", errorMessage: msg, completedAt: new Date() } })
+      .catch(() => {});
+  }
+}
+
+/** Full run: discover jobs (ingestion) then score + generate applications. */
+export async function runFullPipeline(runId: string): Promise<void> {
+  await runIngestion(runId);
+  const run = await prisma.applicationRun.findUnique({ where: { id: runId } });
+  // Only proceed to generation if ingestion completed (not FAILED/CANCELLED).
+  if (run?.status === "COMPLETED") {
+    await runApplicationPipeline(runId);
+  }
+}
+
+/** Fire-and-forget trigger for the full pipeline. */
+export function triggerFullPipeline(runId: string): void {
+  void runFullPipeline(runId).catch((err) => {
+    logger.error({ runId, err: String(err), worker: WORKER_NAME }, "Unhandled pipeline error");
+  });
+}

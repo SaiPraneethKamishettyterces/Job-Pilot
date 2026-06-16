@@ -79,6 +79,90 @@ Rules:
 
 Job Posting:`;
 
+// ─── Open-ended application question answering ───────────────────────────────
+// Ported from Job_applying_agent/llm/prompts.py. The model drafts FREE-TEXT
+// answers to generic questions only ("Why this role?"). It is never asked to
+// assert facts about the candidate (work authorization, degrees, demographics) —
+// those come only from structured profile data. If it can't answer honestly from
+// the given facts it must reply with exactly: NEEDS_USER_ACTION.
+export const QUESTION_SYSTEM =
+  "You are helping a job applicant draft short, honest, professional answers " +
+  "to open-ended job application questions (e.g. 'Why do you want this role?'). " +
+  "Write in the first person as the applicant. Be concise (2-4 sentences). " +
+  "Use ONLY the facts provided in the candidate profile and job description. " +
+  "Never invent qualifications, employers, dates, or credentials. If you lack " +
+  "the information to answer honestly, reply with exactly: NEEDS_USER_ACTION.";
+
+export function buildQuestionPrompt(args: {
+  question: string;
+  jobTitle?: string | null;
+  company?: string | null;
+  jobDescription?: string | null;
+  profileSummary: string;
+}): string {
+  let desc = (args.jobDescription ?? "").trim();
+  if (desc.length > 2000) desc = desc.slice(0, 2000) + " ...";
+  return [
+    `JOB TITLE: ${args.jobTitle ?? "N/A"}`,
+    `COMPANY: ${args.company ?? "N/A"}`,
+    `JOB DESCRIPTION:\n${desc || "N/A"}`,
+    "",
+    `CANDIDATE PROFILE:\n${args.profileSummary}`,
+    "",
+    `QUESTION: ${args.question}`,
+    "",
+    "Answer (first person, 2-4 sentences), or NEEDS_USER_ACTION:",
+  ].join("\n");
+}
+
+// ─── Resume tailoring (skill chokepoint) ─────────────────────────────────────
+// NOTE: the SYSTEM prompt for tailoring is NOT defined here — it is loaded from
+// the `ats-resume-tailoring` skill (server/skills/) by skill-loader.ts so there
+// is one source of truth. This is only the user-prompt builder.
+export function buildTailorUserPrompt(args: {
+  baseResumeText: string;
+  jobDescription: string;
+  userInstructions?: string | null;
+  targetRole?: string | null;
+}): string {
+  return (
+    `TARGET ROLE/TITLE: ${args.targetRole || "(infer from job description)"}\n\n` +
+    `USER INSTRUCTIONS: ${args.userInstructions || "(none)"}\n\n` +
+    "===== JOB DESCRIPTION =====\n" +
+    `${args.jobDescription.trim() || "(none provided)"}\n\n` +
+    "===== BASE RESUME =====\n" +
+    `${args.baseResumeText.trim()}\n\n` +
+    "Tailor the base resume to the job description following every skill rule, " +
+    "and return the single JSON object specified in the output contract " +
+    "(keys: resume, analysis)."
+  );
+}
+
+// ─── Cold outreach email ─────────────────────────────────────────────────────
+export const COLD_EMAIL_SYSTEM =
+  "You are an expert job-application coach writing a short, honest cold outreach " +
+  "email from a candidate to a hiring manager or recruiter. Be specific, warm, and " +
+  "concise (max ~120 words). Personalise to the candidate's real background — never " +
+  "fabricate experience. Output only the email body (no subject line, no meta-commentary).";
+
+export function buildColdEmailPrompt(args: {
+  jobTitle: string;
+  company: string;
+  jobDescription?: string | null;
+  profileSummary: string;
+}): string {
+  let desc = (args.jobDescription ?? "").trim();
+  if (desc.length > 1500) desc = desc.slice(0, 1500) + " ...";
+  return [
+    `ROLE: ${args.jobTitle} at ${args.company}`,
+    `JOB DESCRIPTION:\n${desc || "N/A"}`,
+    "",
+    `CANDIDATE PROFILE:\n${args.profileSummary}`,
+    "",
+    "Write the cold outreach email body now.",
+  ].join("\n");
+}
+
 export const SCORE_PROMPT = `You are a job-fit evaluator. Score how well a candidate matches a job posting.
 
 Return ONLY valid JSON (no markdown, no explanation):

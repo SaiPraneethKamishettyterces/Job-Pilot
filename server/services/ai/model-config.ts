@@ -26,9 +26,15 @@ export const FALLBACK_PRICE = { input: 5.0, output: 25.0 };
 
 // Which model each task uses. Preserves the models the app shipped with:
 //   cover letter → opus, resume parse → sonnet, job parse + scoring → haiku.
+// Document-generation tasks added by the application pipeline:
+//   resume tailoring → sonnet (structured, quality-sensitive), cold email → sonnet,
+//   open-ended application questions → haiku (cheap, last-resort drafting only).
 export const TASK_MODEL = {
   coverLetter: MODELS.opus,
   resumeParse: MODELS.sonnet,
   jobParse: MODELS.haiku,
   matchScore: MODELS.haiku,
+  tailorResume: MODELS.sonnet,
+  coldEmail: MODELS.sonnet,
+  questionAnswer: MODELS.haiku,
 } as const;

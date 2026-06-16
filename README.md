@@ -12,6 +12,51 @@ Built as a **modular monolith** (React + Express) designed to scale into microse
 
 ---
 
+## End-to-end application pipeline
+
+JobPilot now runs the complete workflow end-to-end. The Python `Job_applying_agent`
+engine has been merged in (re-implemented in TypeScript — see
+[docs/MERGE_ANALYSIS.md](docs/MERGE_ANALYSIS.md)):
+
+1. **Discover** — `POST /api/runs/start` (or a paid subscription activation) kicks off
+   the pipeline worker (`server/workers/application-pipeline.ts`): ingest jobs from
+   public ATS boards (Greenhouse/Lever).
+2. **Score** — each job is scored against the candidate (`matching/match-scorer`).
+3. **Generate** — for shortlisted jobs an `Application` is created and its documents
+   are generated (`services/application/application-generator.ts`):
+   - **Tailored resume** via the bundled `ats-resume-tailoring` skill
+     (`server/skills/`) — Claude emits structured JSON, validated, then rendered to a
+     deterministic ATS-safe **DOCX** (`services/resume/`). Verified personal info is
+     force-applied so it can never be altered.
+   - **Cover letter** and **cold email** (`services/application/outreach.ts`).
+   - **Q&A answers** with sensitivity gates (`services/application/qa-generator.ts`):
+     custom answers → profile fields → AI (generic only) → escalate to the user.
+   - **Autofill package** (`services/application/application-package.ts`): the
+     field-selector contract the browser extension / automation consumes.
+4. **Approve** — the Review queue surfaces generated documents; the user approves,
+   edits, or declines (`/api/applications/:id/{generate,approve,decline,answers}`).
+5. **Submit** — `POST /api/applications/:id/submit` drives Playwright
+   (`services/automation/form-filler.ts`) to autofill the live form.
+
+**Safety model (preserved from the engine):** nothing is auto-submitted by default.
+`AUTO_SUBMIT=false` fills the form and leaves it for the user to review + submit;
+CAPTCHA / login / OTP blockers and unsupported ATS are surfaced as
+`ASSISTED_REQUIRED`, never bypassed. Every Claude call is cost-tracked to
+`AIUsageEvent`.
+
+### Additional env vars
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `STORAGE_DIR` | `<repo>/artifacts` | Local-disk store for generated documents (served via the auth'd `/api/files` route). GCS-ready seam in `services/storage/artifact-storage.ts`. |
+| `AUTO_SUBMIT` | `false` | Whether the automation actually clicks submit. Off = prepare-only. |
+
+> Playwright browsers are required only for the submit step. Install with
+> `npx playwright install chromium` (the deploy image should add them); if absent,
+> submit gracefully returns `ASSISTED_REQUIRED`.
+
+---
+
 ## Screenshots
 
 | Login | Onboarding | Dashboard |

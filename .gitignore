@@ -33,6 +33,9 @@ dist-ssr
 # Uploads (user files, never commit)
 uploads/
 
+# Generated application artifacts (resumes, packages) — local-disk store
+artifacts/
+
 # Prisma
 prisma/migrations/
 

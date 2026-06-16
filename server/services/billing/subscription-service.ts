@@ -7,7 +7,8 @@
 // (4) fire the in-process ingestion worker. The frontend never sets this state.
 import { prisma } from "../../lib/db.js";
 import { logger } from "../../lib/logger.js";
-import { createIngestionRun, triggerIngestion } from "../ingestion/ingestion-orchestrator.js";
+import { createIngestionRun } from "../ingestion/ingestion-orchestrator.js";
+import { triggerFullPipeline } from "../../workers/application-pipeline.js";
 
 const DEFAULT_PLAN = {
   slug: "starter-test",
@@ -89,13 +90,14 @@ export async function activateSubscription(userId: string, opts: ActivateOptions
     },
   });
 
-  // 3. Create the ingestion run (T3) and 4. start the worker.
+  // 3. Create the run (T3) and 4. start the full pipeline (discover jobs →
+  //    score → generate applications). The frontend never triggers this.
   const run = await createIngestionRun(userId, "payment_activated");
-  triggerIngestion(run.id);
+  triggerFullPipeline(run.id);
 
   logger.info(
     { userId, runId: run.id, oldStatus, provider },
-    "Subscription activated → ingestion run started"
+    "Subscription activated → full application pipeline started"
   );
 
   return { subscription, event, run };

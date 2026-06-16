@@ -18,6 +18,7 @@ import { statsRouter } from "./routes/stats.js";
 import { billingRouter } from "./routes/billing.js";
 import { subscriptionRouter } from "./routes/subscription.js";
 import { ingestionRouter } from "./routes/ingestion.js";
+import { filesRouter } from "./routes/files.js";
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use("/api/stats", statsRouter);
 app.use("/api/billing", billingRouter);
 app.use("/api/subscription", subscriptionRouter);
 app.use("/api/ingestion", ingestionRouter);
+app.use("/api/files", filesRouter);
 
 // JSON 404 for any unmatched API route (before the SPA catch-all below).
 app.use("/api", notFoundHandler);
