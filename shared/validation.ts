@@ -34,6 +34,53 @@ export const approvalModeEnum = z.enum([
   "DRAFT_ONLY",
 ]);
 
+// Generic, reusable application fields — the answers common ATS forms ask, stored
+// once on the user profile. All optional (the user fills what they want); names
+// default from `fullName`. Role-specific answers are handled per-application.
+export const genericProfileFields = {
+  // identity
+  legalFirstName: z.string().optional(),
+  legalLastName: z.string().optional(),
+  preferredName: z.string().optional(),
+  // address
+  addressLine1: z.string().optional(),
+  addressLine2: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zipCode: z.string().optional(),
+  country: z.string().optional(),
+  personalWebsite: z.string().optional(),
+  // work auth
+  requiresSponsorship: z.boolean().optional(),
+  visaStatus: z.string().optional(),
+  // employment
+  currentEmployer: z.string().optional(),
+  currentTitle: z.string().optional(),
+  // education
+  highestEducation: z.string().optional(),
+  school: z.string().optional(),
+  degree: z.string().optional(),
+  major: z.string().optional(),
+  graduationYear: z.string().optional(),
+  // logistics
+  willingToRelocate: z.boolean().optional(),
+  noticePeriod: z.string().optional(),
+  availabilityToStart: z.string().optional(),
+  desiredSalary: z.string().optional(),
+  coverLetterPreference: z.string().optional(),
+  // sourcing
+  howHeard: z.string().optional(),
+  referralName: z.string().optional(),
+  referralSource: z.string().optional(),
+  // EEO (voluntary)
+  gender: z.string().optional(),
+  raceEthnicity: z.string().optional(),
+  veteranStatus: z.string().optional(),
+  disabilityStatus: z.string().optional(),
+  // consent
+  consentToDataProcessing: z.boolean().optional(),
+} as const;
+
 export const onboardingSchema = z.object({
   fullName: z.string().min(2),
   phone: z.string().optional(),
@@ -52,6 +99,7 @@ export const onboardingSchema = z.object({
   applicationsPerDay: z.number().min(1).max(50),
   approvalMode: approvalModeEnum,
   matchThreshold: z.number().min(50).max(95),
+  ...genericProfileFields,
 });
 export type OnboardingInput = z.infer<typeof onboardingSchema>;
 
@@ -72,6 +120,7 @@ export const profileSchema = z.object({
   experience: z.array(z.object({}).passthrough()).optional(),
   projects: z.array(z.object({}).passthrough()).optional(),
   certifications: z.array(z.string()).optional(),
+  ...genericProfileFields,
 });
 export type ProfileFormInput = z.infer<typeof profileSchema>;
 

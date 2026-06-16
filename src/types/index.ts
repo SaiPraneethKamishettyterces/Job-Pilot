@@ -251,4 +251,36 @@ export interface OnboardingFormData {
   applicationsPerDay: number;
   approvalMode: string;
   matchThreshold: number;
+  // Generic ATS application details (filled once, reused on every application)
+  legalFirstName?: string;
+  legalLastName?: string;
+  preferredName?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
+  personalWebsite?: string;
+  requiresSponsorship?: boolean;
+  visaStatus?: string;
+  currentEmployer?: string;
+  currentTitle?: string;
+  highestEducation?: string;
+  school?: string;
+  degree?: string;
+  major?: string;
+  graduationYear?: string;
+  willingToRelocate?: boolean;
+  noticePeriod?: string;
+  availabilityToStart?: string;
+  desiredSalary?: string;
+  coverLetterPreference?: string;
+  howHeard?: string;
+  referralName?: string;
+  // EEO (voluntary)
+  gender?: string;
+  raceEthnicity?: string;
+  veteranStatus?: string;
+  disabilityStatus?: string;
+  consentToDataProcessing?: boolean;
 }

@@ -9,10 +9,17 @@ export interface CandidateProfile {
   userId: string;
   firstName: string | null;
   lastName: string | null;
+  preferredName: string | null;
   fullName: string | null;
   email: string | null;
   phone: string | null;
   location: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  zipCode: string | null;
+  country: string | null;
   linkedinUrl: string | null;
   githubUrl: string | null;
   portfolioUrl: string | null;
@@ -30,6 +37,16 @@ export interface CandidateProfile {
   willingToRelocate: boolean | null;
   desiredSalary: string | null;
   noticePeriod: string | null;
+  availabilityToStart: string | null;
+  coverLetterPreference: string | null;
+  howHeard: string | null;
+  referralName: string | null;
+  referralSource: string | null;
+  // EEO / voluntary — stored, surfaced to the user, NOT auto-filled as standard fields.
+  gender: string | null;
+  raceEthnicity: string | null;
+  veteranStatus: string | null;
+  disabilityStatus: string | null;
   summary: string | null;
   skills: string[];
   education: Array<Record<string, unknown>>;
@@ -103,35 +120,52 @@ export async function loadCandidateProfile(userId: string): Promise<CandidatePro
     }
   }
 
+  // Prefer the explicit generic columns; fall back to derivation/legacy locations
+  // so older profiles still work.
+  const locationFromParts =
+    [profile?.city, profile?.state, profile?.country].filter(Boolean).join(", ") || null;
+
   return {
     userId,
-    firstName: first,
-    lastName: last,
+    firstName: profile?.legalFirstName ?? first,
+    lastName: profile?.legalLastName ?? last,
+    preferredName: profile?.preferredName ?? null,
     fullName,
     email: user.email ?? null,
     phone: profile?.phone ?? null,
-    location: profile?.location ?? null,
+    location: profile?.location ?? locationFromParts,
+    addressLine1: profile?.addressLine1 ?? null,
+    addressLine2: profile?.addressLine2 ?? null,
+    city: profile?.city ?? null,
+    state: profile?.state ?? null,
+    zipCode: profile?.zipCode ?? null,
+    country: profile?.country ?? null,
     linkedinUrl: profile?.linkedinUrl ?? null,
     githubUrl: profile?.githubUrl ?? null,
     portfolioUrl: profile?.portfolioUrl ?? null,
-    websiteUrl: profile?.portfolioUrl ?? null,
-    currentCompany: pick(currentRole, "company", "employer"),
-    currentTitle: pick(currentRole, "title", "role", "position"),
+    websiteUrl: profile?.personalWebsite ?? profile?.portfolioUrl ?? null,
+    currentCompany: profile?.currentEmployer ?? pick(currentRole, "company", "employer"),
+    currentTitle: profile?.currentTitle ?? pick(currentRole, "title", "role", "position"),
     yearsOfExperience: profile?.yearsExperience ?? null,
-    highestDegree: pick(topEducation, "degree"),
-    schoolName: pick(topEducation, "institution", "school", "university"),
-    major: pick(topEducation, "field", "major"),
-    graduationYear: pick(topEducation, "endYear", "graduationYear", "endDate"),
+    highestDegree: profile?.degree ?? profile?.highestEducation ?? pick(topEducation, "degree"),
+    schoolName: profile?.school ?? pick(topEducation, "institution", "school", "university"),
+    major: profile?.major ?? pick(topEducation, "field", "major"),
+    graduationYear: profile?.graduationYear ?? pick(topEducation, "endYear", "graduationYear", "endDate"),
     workAuthorization: profile?.workAuthorization ?? null,
-    requiresSponsorship: typeof atsPrefs["requiresSponsorship"] === "boolean"
-      ? (atsPrefs["requiresSponsorship"] as boolean)
-      : null,
-    visaStatus: typeof atsPrefs["visaStatus"] === "string" ? (atsPrefs["visaStatus"] as string) : null,
-    willingToRelocate: typeof atsPrefs["willingToRelocate"] === "boolean"
-      ? (atsPrefs["willingToRelocate"] as boolean)
-      : null,
-    desiredSalary: prefs?.minSalary ? String(prefs.minSalary) : null,
-    noticePeriod: typeof atsPrefs["noticePeriod"] === "string" ? (atsPrefs["noticePeriod"] as string) : null,
+    requiresSponsorship: profile?.requiresSponsorship ?? null,
+    visaStatus: profile?.visaStatus ?? null,
+    willingToRelocate: profile?.willingToRelocate ?? null,
+    desiredSalary: profile?.desiredSalary ?? (prefs?.minSalary ? String(prefs.minSalary) : null),
+    noticePeriod: profile?.noticePeriod ?? null,
+    availabilityToStart: profile?.availabilityToStart ?? null,
+    coverLetterPreference: profile?.coverLetterPreference ?? null,
+    howHeard: profile?.howHeard ?? null,
+    referralName: profile?.referralName ?? null,
+    referralSource: profile?.referralSource ?? null,
+    gender: profile?.gender ?? null,
+    raceEthnicity: profile?.raceEthnicity ?? null,
+    veteranStatus: profile?.veteranStatus ?? null,
+    disabilityStatus: profile?.disabilityStatus ?? null,
     summary: profile?.summary ?? null,
     skills: asStringArray(profile?.skillsJson),
     education,

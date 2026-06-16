@@ -13,6 +13,12 @@ describe("detectPlatform", () => {
     expect(detectPlatform("https://jobs.lever.co/acme/abc/apply")).toBe("lever");
   });
 
+  it("detects ashby and workable", () => {
+    expect(detectPlatform("https://jobs.ashbyhq.com/acme/abc")).toBe("ashby");
+    expect(detectPlatform("https://apply.workable.com/acme/j/123")).toBe("workable");
+    expect(detectPlatform("https://acme.workable.com/jobs/1")).toBe("workable");
+  });
+
   it("returns unsupported for unknown or empty urls", () => {
     expect(detectPlatform("https://careers.acme.com/123")).toBe("unsupported");
     expect(detectPlatform(null)).toBe("unsupported");

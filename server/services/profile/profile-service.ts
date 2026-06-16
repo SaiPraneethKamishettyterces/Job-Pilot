@@ -1,5 +1,41 @@
 import { prisma } from "../../lib/db.js";
 
+// Generic, reusable application fields stored once on the profile.
+export type GenericProfileFields = {
+  legalFirstName?: string;
+  legalLastName?: string;
+  preferredName?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
+  personalWebsite?: string;
+  requiresSponsorship?: boolean;
+  visaStatus?: string;
+  currentEmployer?: string;
+  currentTitle?: string;
+  highestEducation?: string;
+  school?: string;
+  degree?: string;
+  major?: string;
+  graduationYear?: string;
+  willingToRelocate?: boolean;
+  noticePeriod?: string;
+  availabilityToStart?: string;
+  desiredSalary?: string;
+  coverLetterPreference?: string;
+  howHeard?: string;
+  referralName?: string;
+  referralSource?: string;
+  gender?: string;
+  raceEthnicity?: string;
+  veteranStatus?: string;
+  disabilityStatus?: string;
+  consentToDataProcessing?: boolean;
+};
+
 export type ProfileInput = {
   fullName: string;
   phone?: string;
@@ -15,7 +51,28 @@ export type ProfileInput = {
   experience?: unknown[];
   projects?: unknown[];
   certifications?: string[];
-};
+} & GenericProfileFields;
+
+// Keys of the generic block — used to pass only defined values through to Prisma.
+const GENERIC_KEYS = [
+  "legalFirstName", "legalLastName", "preferredName", "addressLine1", "addressLine2",
+  "city", "state", "zipCode", "country", "personalWebsite", "requiresSponsorship",
+  "visaStatus", "currentEmployer", "currentTitle", "highestEducation", "school",
+  "degree", "major", "graduationYear", "willingToRelocate", "noticePeriod",
+  "availabilityToStart", "desiredSalary", "coverLetterPreference", "howHeard",
+  "referralName", "referralSource", "gender", "raceEthnicity", "veteranStatus",
+  "disabilityStatus", "consentToDataProcessing",
+] as const;
+
+function pickGeneric(data: GenericProfileFields): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of GENERIC_KEYS) {
+    const v = (data as Record<string, unknown>)[k];
+    if (v !== undefined) out[k] = v;
+  }
+  if (data.consentToDataProcessing) out["consentAt"] = new Date();
+  return out;
+}
 
 export type PreferencesInput = {
   targetRoles?: string[];
@@ -55,6 +112,7 @@ export async function upsertProfile(userId: string, data: ProfileInput) {
     projectsJson: (data.projects ?? []) as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     certificationsJson: (data.certifications ?? []) as any,
+    ...pickGeneric(data),
   };
   return prisma.userProfile.upsert({
     where: { userId },

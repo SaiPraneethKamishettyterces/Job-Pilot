@@ -18,9 +18,15 @@ JobPilot now runs the complete workflow end-to-end. The Python `Job_applying_age
 engine has been merged in (re-implemented in TypeScript — see
 [docs/MERGE_ANALYSIS.md](docs/MERGE_ANALYSIS.md)):
 
+0. **Onboard** — the user fills profile + preferences and an **Application Details**
+   step that captures the generic questions every ATS asks (legal/preferred name,
+   address, work auth + sponsorship, employment, education, logistics, sourcing,
+   optional EEO, consent) **once** — stored on `UserProfile` and reused on every
+   application. Role-specific answers are handled per-application (`ApplicationAnswer`).
 1. **Discover** — `POST /api/runs/start` (or a paid subscription activation) kicks off
    the pipeline worker (`server/workers/application-pipeline.ts`): ingest jobs from
-   public ATS boards (Greenhouse/Lever).
+   public ATS boards (Greenhouse/Lever). Autofill + platform detection also cover
+   **Ashby** and **Workable** (`server/services/automation/`).
 2. **Score** — each job is scored against the candidate (`matching/match-scorer`).
 3. **Generate** — for shortlisted jobs an `Application` is created and its documents
    are generated (`services/application/application-generator.ts`):
@@ -54,6 +60,11 @@ CAPTCHA / login / OTP blockers and unsupported ATS are surfaced as
 > Playwright browsers are required only for the submit step. Install with
 > `npx playwright install chromium` (the deploy image should add them); if absent,
 > submit gracefully returns `ASSISTED_REQUIRED`.
+
+> **Repo note:** the unused `infra/` Terraform was removed from the active workflow
+> (recoverable from git history) pending the productionization phase. `Dockerfile`,
+> `cloudbuild.yaml`, and `.github/workflows` are retained for that step. See
+> [docs/AUDIT.md](docs/AUDIT.md) for the full audit + prioritized TODO.
 
 ---
 
