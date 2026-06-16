@@ -4,7 +4,18 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>job-portal</title>
+    <meta name="theme-color" content="#050816" />
+    <title>JobPilot · Career Copilot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <script>
+      // Apply persisted theme before paint to avoid a flash. Dark is default.
+      try {
+        if (localStorage.getItem("jp_theme") === "light") {
+          document.documentElement.classList.add("light");
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

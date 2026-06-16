@@ -1,4 +1,4 @@
-import { Briefcase, Play, CheckSquare, TrendingUp, Clock, Target, DollarSign, Zap, Loader2 } from "lucide-react";
+import { Briefcase, Play, CheckSquare, TrendingUp, Clock, Target, DollarSign, Zap, Loader2, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
-import { formatRelativeDate } from "@/lib/utils";
+import { cn, formatRelativeDate } from "@/lib/utils";
 import { getDashboardStats, type DashboardStats } from "@/services/api";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "success" | "warning" | "info" | "secondary" | "destructive" | "outline" }> = {
@@ -32,21 +32,19 @@ function StatCard({ label, value, sub, icon: Icon, iconBg, isLoading }: {
   icon: typeof Target; iconBg: string; isLoading: boolean;
 }) {
   return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-muted-foreground">{label}</span>
-          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${iconBg}`}>
-            <Icon className="h-4 w-4" />
-          </div>
+    <Card className="p-5 hover:-translate-y-px">
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
+        <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconBg)}>
+          <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
         </div>
-        {isLoading ? (
-          <Skeleton className="h-9 w-16 mb-1" />
-        ) : (
-          <div className="text-3xl font-bold">{value}</div>
-        )}
-        <div className="text-xs text-muted-foreground mt-1">{isLoading ? <Skeleton className="h-3 w-24" /> : sub}</div>
-      </CardContent>
+      </div>
+      {isLoading ? (
+        <Skeleton className="mt-4 h-9 w-16" />
+      ) : (
+        <div className="mt-4 text-[34px] font-bold leading-none tracking-[-0.03em] tabular-nums">{value}</div>
+      )}
+      <div className="mt-2 text-xs text-muted-foreground">{isLoading ? <Skeleton className="h-3 w-24" /> : sub}</div>
     </Card>
   );
 }
@@ -66,32 +64,42 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Good morning, {firstName} 👋</h2>
-          <p className="text-muted-foreground text-sm mt-0.5">Here's what's happening with your job search today</p>
+      {/* Hero */}
+      <Card className="relative overflow-hidden p-6 md:p-7">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-90"
+          style={{ background: "linear-gradient(115deg, rgba(37,99,235,0.16), rgba(139,92,246,0.10) 45%, transparent 70%)" }}
+        />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[13px] font-medium text-brand-blue-soft">Welcome back</p>
+            <h2 className="mt-1 text-[28px] font-bold leading-8 tracking-[-0.025em]">
+              Good to see you, <span className="text-gradient">{firstName}</span>
+            </h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">Here's what's happening with your job search today.</p>
+          </div>
+          <Button onClick={() => navigate("/runs")} size="lg" className="shrink-0">
+            <Zap className="h-4 w-4" />
+            Start a Run
+          </Button>
         </div>
-        <Button onClick={() => navigate("/runs")} size="lg">
-          <Zap className="h-4 w-4" />
-          Start Run
-        </Button>
-      </div>
+      </Card>
 
       {isError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="rounded-card border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-red-300 light:text-red-600">
           Could not load live stats — make sure the server is running and DATABASE_URL is configured.
         </div>
       )}
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Metric bento */}
+      <div className="bento-grid">
         <StatCard
           label="Jobs Found Today"
           value={stats?.jobsFoundToday ?? 0}
           sub={stats ? `${stats.matchRate}% avg match rate` : ""}
           icon={Target}
-          iconBg="bg-primary/10 text-primary"
+          iconBg="bg-brand-blue/12 text-brand-blue-soft"
           isLoading={isLoading}
         />
         <StatCard
@@ -99,7 +107,7 @@ export function DashboardPage() {
           value={stats?.shortlisted ?? 0}
           sub="Above your threshold"
           icon={TrendingUp}
-          iconBg="bg-warning/10 text-warning"
+          iconBg="bg-amber-500/12 text-amber-300 light:text-amber-600"
           isLoading={isLoading}
         />
         <StatCard
@@ -107,33 +115,31 @@ export function DashboardPage() {
           value={stats?.applied ?? 0}
           sub={stats ? `${stats.weeklyTotal} this week` : ""}
           icon={Briefcase}
-          iconBg="bg-success/10 text-success"
+          iconBg="bg-green-500/12 text-green-300 light:text-green-600"
           isLoading={isLoading}
         />
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">Needs Review</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-destructive/10">
-                <CheckSquare className="h-4 w-4 text-destructive" />
-              </div>
+        <Card className="p-5 hover:-translate-y-px">
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] font-medium text-muted-foreground">Needs Review</span>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-purple/14 text-brand-purple-soft">
+              <CheckSquare className="h-[18px] w-[18px]" strokeWidth={1.8} />
             </div>
-            {isLoading ? (
-              <Skeleton className="h-9 w-16 mb-1" />
-            ) : (
-              <div className="text-3xl font-bold">{stats?.needsApproval ?? 0}</div>
-            )}
-            {!isLoading && (stats?.needsApproval ?? 0) > 0 && (
-              <Button
-                variant="link"
-                size="sm"
-                className="p-0 h-auto text-xs text-primary"
-                onClick={() => navigate("/review")}
-              >
-                Review now →
-              </Button>
-            )}
-          </CardContent>
+          </div>
+          {isLoading ? (
+            <Skeleton className="mt-4 h-9 w-16" />
+          ) : (
+            <div className="mt-4 text-[34px] font-bold leading-none tracking-[-0.03em] tabular-nums">{stats?.needsApproval ?? 0}</div>
+          )}
+          {!isLoading && (stats?.needsApproval ?? 0) > 0 ? (
+            <button
+              onClick={() => navigate("/review")}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-blue-soft hover:underline"
+            >
+              Review now <ArrowRight className="h-3 w-3" />
+            </button>
+          ) : (
+            <div className="mt-2 text-xs text-muted-foreground">All caught up</div>
+          )}
         </Card>
       </div>
 

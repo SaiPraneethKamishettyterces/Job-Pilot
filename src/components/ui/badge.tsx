@@ -3,17 +3,20 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-4 transition-colors",
   {
     variants: {
       variant: {
-        default: "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
-        secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        destructive: "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
-        outline: "text-foreground",
-        success: "border-transparent bg-success/15 text-success",
-        warning: "border-transparent bg-warning/15 text-warning",
-        info: "border-transparent bg-primary/15 text-primary",
+        // Default reads as a brand/info pill (was solid primary).
+        default: "border-brand-blue/30 bg-brand-blue/15 text-brand-blue-soft",
+        info: "border-brand-blue/30 bg-brand-blue/15 text-brand-blue-soft",
+        secondary: "border-border bg-foreground/[0.06] text-muted-foreground",
+        success: "border-green-500/30 bg-green-500/12 text-green-300 light:text-green-700",
+        warning: "border-amber-500/30 bg-amber-500/12 text-amber-300 light:text-amber-700",
+        destructive: "border-red-500/30 bg-red-500/12 text-red-300 light:text-red-600",
+        purple: "border-brand-purple/30 bg-brand-purple/15 text-brand-purple-soft",
+        cyan: "border-cyan-500/30 bg-cyan-500/12 text-cyan-300 light:text-cyan-700",
+        outline: "border-border text-foreground",
       },
     },
     defaultVariants: {

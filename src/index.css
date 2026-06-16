@@ -1,38 +1,166 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&family=JetBrains+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 
-@theme {
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(222.2 84% 4.9%);
-  --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(222.2 84% 4.9%);
-  --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(222.2 84% 4.9%);
-  --color-primary: hsl(221.2 83.2% 53.3%);
-  --color-primary-foreground: hsl(210 40% 98%);
-  --color-secondary: hsl(210 40% 96.1%);
-  --color-secondary-foreground: hsl(222.2 47.4% 11.2%);
-  --color-muted: hsl(210 40% 96.1%);
-  --color-muted-foreground: hsl(215.4 16.3% 46.9%);
-  --color-accent: hsl(210 40% 96.1%);
-  --color-accent-foreground: hsl(222.2 47.4% 11.2%);
-  --color-destructive: hsl(0 84.2% 60.2%);
-  --color-destructive-foreground: hsl(210 40% 98%);
-  --color-border: hsl(214.3 31.8% 91.4%);
-  --color-input: hsl(214.3 31.8% 91.4%);
-  --color-ring: hsl(221.2 83.2% 53.3%);
-  --color-success: hsl(142.1 76.2% 36.3%);
-  --color-success-foreground: hsl(355.7 100% 97.3%);
-  --color-warning: hsl(32.1 94.6% 43.7%);
-  --color-warning-foreground: hsl(355.7 100% 97.3%);
+/* Light-mode override variant (dark is the default :root). Usage: light:text-… */
+@custom-variant light (&:where(.light, .light *));
 
-  --radius: 0.5rem;
+/* ─────────────────────────────────────────────────────────────────────────────
+   Career Copilot OS — dark-mode-first design system.
+   Palette values live on :root (dark) and .light (override); @theme inline maps
+   the shadcn token names to those vars so every component re-themes at runtime.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Surfaces */
+  --background: #050816;
+  --foreground: #f8fafc;
+  --card: #10172e;
+  --card-foreground: #f8fafc;
+  --popover: #0d1328;
+  --popover-foreground: #f8fafc;
+
+  /* Brand / interactive */
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #18213d;
+  --secondary-foreground: #f8fafc;
+  --muted: #0d1328;
+  --muted-foreground: #94a3b8;
+  --accent: #151d38;
+  --accent-foreground: #f8fafc;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  /* Lines + focus */
+  --border: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.14);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #3b82f6;
+
+  /* Semantic */
+  --success: #22c55e;
+  --success-foreground: #052e16;
+  --warning: #f59e0b;
+  --warning-foreground: #1c1300;
+  --info: #38bdf8;
+
+  /* Brand scale */
+  --brand-blue: #2563eb;
+  --brand-blue-bright: #3b82f6;
+  --brand-blue-soft: #60a5fa;
+  --brand-purple: #8b5cf6;
+  --brand-purple-soft: #a78bfa;
+  --brand-cyan: #06b6d4;
+
+  /* Card gradient + elevation (tuned per mode) */
+  --card-grad-top: rgba(255, 255, 255, 0.045);
+  --card-grad-bottom: rgba(255, 255, 255, 0.02);
+  --card-grad-top-hover: rgba(255, 255, 255, 0.065);
+  --card-grad-bottom-hover: rgba(255, 255, 255, 0.03);
+  --app-shadow-card: 0 16px 40px rgba(0, 0, 0, 0.28);
+  --app-shadow-panel: 0 24px 70px rgba(0, 0, 0, 0.42);
+
+  /* Ambient background glow (premium dark backdrop) */
+  --bg-glow-1: rgba(37, 99, 235, 0.10);
+  --bg-glow-2: rgba(139, 92, 246, 0.09);
+
+  /* Shell */
+  --sidebar-bg: #070b18;
+  --sidebar-active: linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(139, 92, 246, 0.18));
+
+  --radius: 0.625rem;
+}
+
+.light {
+  --sidebar-bg: #ffffff;
+  --sidebar-active: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(139, 92, 246, 0.10));
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: #e2e8f0;
+  --border-medium: #cbd5e1;
+  --input: #cbd5e1;
+  --ring: #2563eb;
+
+  --success: #16a34a;
+  --success-foreground: #f0fdf4;
+  --warning: #d97706;
+  --warning-foreground: #fffbeb;
+  --info: #0284c7;
+
+  --card-grad-top: #ffffff;
+  --card-grad-bottom: #ffffff;
+  --card-grad-top-hover: #f8fafc;
+  --card-grad-bottom-hover: #f8fafc;
+  --app-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --app-shadow-panel: 0 12px 40px rgba(15, 23, 42, 0.10);
+
+  --bg-glow-1: rgba(37, 99, 235, 0.05);
+  --bg-glow-2: rgba(139, 92, 246, 0.04);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-bright: var(--brand-blue-bright);
+  --color-brand-blue-soft: var(--brand-blue-soft);
+  --color-brand-purple: var(--brand-purple);
+  --color-brand-purple-soft: var(--brand-purple-soft);
+  --color-brand-cyan: var(--brand-cyan);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: 14px;
+  --radius-card: 18px;
+  --radius-panel: 24px;
 
-  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --shadow-card: var(--app-shadow-card);
+  --shadow-panel: var(--app-shadow-panel);
+  --shadow-blue-glow: 0 0 0 1px rgba(59, 130, 246, 0.22), 0 20px 60px rgba(37, 99, 235, 0.12);
+  --shadow-purple-glow: 0 0 0 1px rgba(139, 92, 246, 0.22), 0 20px 60px rgba(139, 92, 246, 0.12);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
 }
 
 @layer base {
@@ -40,15 +168,103 @@
     border-color: var(--color-border);
     outline-color: var(--color-ring);
   }
+  html {
+    color-scheme: dark;
+  }
+  html.light {
+    color-scheme: light;
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Ambient blue/purple glow at the top — subtle, fixed, low-noise. */
+    background-image:
+      radial-gradient(900px 500px at 12% -8%, var(--bg-glow-1), transparent 60%),
+      radial-gradient(820px 460px at 92% -6%, var(--bg-glow-2), transparent 60%);
+    background-attachment: fixed;
   }
   #root {
     min-height: 100vh;
     width: 100%;
+  }
+  ::selection {
+    background: rgba(59, 130, 246, 0.3);
+  }
+  /* Slim, themed scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-medium) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border-medium);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /* Gradient surface card (the default panel look). */
+  .surface-card {
+    background-image: linear-gradient(180deg, var(--card-grad-top), var(--card-grad-bottom));
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
+  }
+  .surface-card-hover:hover {
+    background-image: linear-gradient(180deg, var(--card-grad-top-hover), var(--card-grad-bottom-hover));
+    border-color: var(--border-medium);
+  }
+
+  /* Frosted glass panel (topbar, overlays, right rail). */
+  .glass-panel {
+    background-color: color-mix(in srgb, var(--card) 72%, transparent);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--border);
+  }
+
+  /* Brand gradient text (headlines / metric emphasis). */
+  .text-gradient {
+    background: linear-gradient(135deg, var(--brand-blue-soft), var(--brand-purple-soft));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Responsive bento grid. */
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 20px;
+  }
+  @media (max-width: 1199px) {
+    .bento-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+  }
+  @media (max-width: 767px) {
+    .bento-grid {
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+  }
+}
+
+@layer utilities {
+  .gradient-primary {
+    background-image: linear-gradient(135deg, var(--brand-blue), var(--brand-purple));
+  }
+  .gradient-primary-hover:hover {
+    background-image: linear-gradient(135deg, var(--brand-blue-bright), var(--brand-purple-soft));
   }
 }

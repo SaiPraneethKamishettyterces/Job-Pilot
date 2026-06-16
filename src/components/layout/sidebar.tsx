@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -43,6 +42,32 @@ const secondaryNav = [
   { to: "/contact", icon: Mail, label: "Contact Us" },
 ];
 
+function NavRow({ to, icon: Icon, label }: { to: string; icon: typeof Play; label: string }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        cn(
+          "group flex h-[42px] items-center gap-3 rounded-lg px-3 text-sm font-medium transition-[background,color] duration-150",
+          isActive
+            ? "border border-border bg-[image:var(--sidebar-active)] text-foreground shadow-[0_8px_24px_-12px_rgba(37,99,235,0.5)]"
+            : "border border-transparent text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+        )
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <Icon
+            className={cn("h-[18px] w-[18px] shrink-0", isActive ? "text-brand-blue-soft" : "text-muted-foreground group-hover:text-foreground")}
+            strokeWidth={1.8}
+          />
+          <span className="truncate">{label}</span>
+        </>
+      )}
+    </NavLink>
+  );
+}
+
 export function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -57,71 +82,50 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r bg-card">
-      {/* Logo */}
-      <div className="flex h-16 items-center gap-2.5 px-5 border-b">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-          <Sparkles className="h-4 w-4 text-primary-foreground" />
+    <aside className="hidden md:flex h-screen w-[260px] shrink-0 flex-col border-r border-border bg-[color:var(--sidebar-bg)]">
+      {/* Brand */}
+      <div className="flex h-[72px] items-center gap-2.5 px-5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl gradient-primary shadow-[0_8px_20px_-6px_rgba(37,99,235,0.6)]">
+          <Sparkles className="h-[18px] w-[18px] text-white" strokeWidth={1.8} />
         </div>
-        <span className="text-base font-semibold tracking-tight">JobPilot</span>
+        <div className="leading-tight">
+          <p className="text-[15px] font-bold tracking-tight">JobPilot</p>
+          <p className="text-[11px] font-medium text-muted-foreground">Career Copilot</p>
+        </div>
       </div>
 
-      {/* Primary Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-3.5 py-3 space-y-1">
+        <p className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+          Workspace
+        </p>
         {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              )
-            }
-          >
-            <item.icon className="h-4 w-4 shrink-0" />
-            {item.label}
-          </NavLink>
+          <NavRow key={item.to} {...item} />
         ))}
 
-        <Separator className="my-3" />
-
+        <p className="px-3 pb-1.5 pt-5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+          Account
+        </p>
         {secondaryNav.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              )
-            }
-          >
-            <item.icon className="h-4 w-4 shrink-0" />
-            {item.label}
-          </NavLink>
+          <NavRow key={item.to} {...item} />
         ))}
       </nav>
 
-      {/* User Footer */}
-      <div className="border-t p-3">
-        <div className="flex items-center gap-3 rounded-md p-2 hover:bg-accent transition-colors">
-          <Avatar className="h-8 w-8">
+      {/* User footer */}
+      <div className="border-t border-border p-3">
+        <div className="flex items-center gap-3 rounded-xl border border-transparent p-2 transition-colors hover:border-border hover:bg-foreground/[0.04]">
+          <Avatar className="h-9 w-9">
             <AvatarImage src={user?.avatarUrl} />
-            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+            <AvatarFallback className="bg-foreground/[0.08] text-xs font-semibold">{initials}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{user?.name ?? "User"}</p>
+            <p className="truncate text-sm font-semibold">{user?.name ?? "User"}</p>
             <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
           </div>
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 shrink-0"
+            className="h-8 w-8 shrink-0"
             onClick={handleLogout}
             title="Sign out"
           >
