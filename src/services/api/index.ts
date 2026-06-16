@@ -10,3 +10,4 @@ export * from "./applications.js";
 export * from "./billing.js";
 export * from "./activity.js";
 export * from "./account.js";
+export * from "./auth.js";

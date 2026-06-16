@@ -8,6 +8,7 @@ import { getProfile, getPreferences } from "../services/profile/profile-service.
 import { parseJobDescription, fetchUrlText } from "../services/job-discovery/job-parser.js";
 import { scoreJobMatch, type ProfileSnapshot } from "../services/matching/match-scorer.js";
 import { addJobSchema } from "../../shared/validation.js";
+import { aiLimiter } from "../middleware/rate-limit.js";
 
 export const jobsRouter = Router();
 
@@ -27,7 +28,7 @@ async function getProfileSnapshot(userId: string): Promise<ProfileSnapshot> {
 }
 
 // POST /api/jobs — parse JD from URL or text, score, save
-jobsRouter.post("/", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+jobsRouter.post("/", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
   const parsed = addJobSchema.safeParse(req.body);
   if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? "Invalid input");
 
@@ -180,7 +181,7 @@ jobsRouter.get("/:id", requireAuth, asyncHandler(async (req: AuthRequest, res) =
 }));
 
 // POST /api/jobs/:id/rescore — re-run match scoring for a job
-jobsRouter.post("/:id/rescore", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+jobsRouter.post("/:id/rescore", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
   const userId = req.userId!;
   const jobId = req.params["id"] as string;
 

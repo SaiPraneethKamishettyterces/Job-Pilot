@@ -3,9 +3,11 @@ import cors from "cors";
 import { fileURLToPath } from "url";
 import path from "path";
 import { env } from "./lib/env.js";
+import { corsOrigins } from "./lib/config.js";
 import { logger } from "./lib/logger.js";
 import { requestLogger } from "./middleware/request-logger.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
+import { authLimiter, aiLimiter } from "./middleware/rate-limit.js";
 import { claudeRouter } from "./routes/claude.js";
 import { authRouter } from "./routes/auth.js";
 import { resumesRouter } from "./routes/resumes.js";
@@ -25,7 +27,16 @@ import { startRetryWorker } from "./workers/retry-worker.js";
 
 const app = express();
 
-app.use(cors({ origin: env.UI_ORIGIN }));
+// Behind Cloud Run's proxy — trust the first hop so req.ip reflects the real
+// client (correct rate-limit keying + logging).
+app.set("trust proxy", 1);
+
+const allowedOrigins = corsOrigins();
+app.use(
+  cors({
+    origin: allowedOrigins.includes("*") ? true : allowedOrigins,
+  }),
+);
 
 // Stripe webhook MUST receive the raw body to verify the signature, so it is
 // registered before express.json() consumes/parses the request body.
@@ -34,13 +45,27 @@ app.post("/api/subscription/webhook", express.raw({ type: "application/json" }),
 app.use(express.json());
 app.use(requestLogger);
 
+// Liveness: process is up. Used by the Cloud Run smoke test.
 app.get("/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 
-app.use("/api/auth", authRouter);
+// Readiness: dependencies (DB) reachable. Returns 503 when not, so a load
+// balancer / deploy gate won't route traffic to an instance that can't serve.
+app.get("/readiness", async (_req, res) => {
+  try {
+    const { prisma } = await import("./lib/db.js");
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: "ready", db: "ok" });
+  } catch (err) {
+    logger.error({ err: String(err) }, "Readiness check failed");
+    res.status(503).json({ status: "not_ready", db: "unavailable" });
+  }
+});
+
+app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/onboarding", onboardingRouter);
 app.use("/api/resumes", resumesRouter);
 app.use("/api/runs", runsRouter);
-app.use("/api/claude", claudeRouter);
+app.use("/api/claude", aiLimiter, claudeRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/jobs", jobsRouter);
 app.use("/api/applications", applicationsRouter);

@@ -7,6 +7,7 @@ import { prisma } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { applicationRepository } from "../repositories/application-repository.js";
 import { applicationUpdateSchema, answerQuestionsSchema } from "../../shared/validation.js";
+import { aiLimiter } from "../middleware/rate-limit.js";
 import { generateApplicationDocuments } from "../services/application/application-generator.js";
 import { retryApplication } from "../services/application/retry-service.js";
 import { answerQuestions } from "../services/application/qa-generator.js";
@@ -76,7 +77,7 @@ applicationsRouter.get("/:id", requireAuth, asyncHandler(async (req: AuthRequest
 
 // POST /api/applications/:id/generate — (re)generate all AI documents for an
 // application: tailored resume, cover letter, cold email, autofill package.
-applicationsRouter.post("/:id/generate", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+applicationsRouter.post("/:id/generate", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
   const id = req.params["id"] as string;
   const app = await applicationRepository.findOwned(id, req.userId!);
   if (!app) throw notFound("Application not found");
@@ -88,7 +89,7 @@ applicationsRouter.post("/:id/generate", requireAuth, asyncHandler(async (req: A
 
 // POST /api/applications/:id/retry — re-run document generation for an
 // application that failed, bounded by the per-app attempt cap.
-applicationsRouter.post("/:id/retry", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+applicationsRouter.post("/:id/retry", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
   const id = req.params["id"] as string;
   const app = await applicationRepository.findOwned(id, req.userId!);
   if (!app) throw notFound("Application not found");
@@ -100,7 +101,7 @@ applicationsRouter.post("/:id/retry", requireAuth, asyncHandler(async (req: Auth
 
 // POST /api/applications/:id/answers — generate/answer application questions.
 // Body: { questions: string[] }. Persists results to ApplicationAnswer.
-applicationsRouter.post("/:id/answers", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+applicationsRouter.post("/:id/answers", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
   const id = req.params["id"] as string;
   const app = await prisma.application.findFirst({ where: { id, userId: req.userId! }, include: { job: true } });
   if (!app) throw notFound("Application not found");
@@ -162,7 +163,7 @@ applicationsRouter.post("/:id/decline", requireAuth, asyncHandler(async (req: Au
 // AUTO_SUBMIT is enabled, submit) the application form using the prepared package.
 // Safety: blockers (CAPTCHA/login/OTP) and unsupported ATS surface as
 // ASSISTED_REQUIRED/NEEDS_APPROVAL rather than being bypassed.
-applicationsRouter.post("/:id/submit", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+applicationsRouter.post("/:id/submit", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
   const id = req.params["id"] as string;
   const app = await prisma.application.findFirst({
     where: { id, userId: req.userId! },

@@ -8,6 +8,9 @@ import { AppLayout } from "./components/layout/app-layout";
 // Auth + onboarding load eagerly (first paint / unauthenticated entry points).
 import { LoginPage } from "./pages/auth/login";
 import { SignupPage } from "./pages/auth/signup";
+import { ForgotPasswordPage } from "./pages/auth/forgot-password";
+import { ResetPasswordPage } from "./pages/auth/reset-password";
+import { VerifyEmailPage } from "./pages/auth/verify-email";
 
 // Everything else is route-split so the initial bundle stays small — each page
 // becomes its own chunk loaded on demand (heavy deps like recharts no longer
@@ -49,6 +52,9 @@ export default function App() {
               {/* Public auth routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
 
               {/* Public support routes (accessible without login) */}

@@ -122,11 +122,28 @@ export const config = {
     emailEnabled: bool("NOTIFY_EMAIL_ENABLED", true),
     emailTransport: optional("NOTIFY_EMAIL_TRANSPORT", "log"), // log | smtp
     fromAddress: optional("NOTIFY_FROM_ADDRESS", "JobPilot <no-reply@jobpilot.local>"),
+    smtp: {
+      host: optional("SMTP_HOST"),
+      port: num("SMTP_PORT", 587),
+      secure: bool("SMTP_SECURE", false),
+      user: optional("SMTP_USER"),
+      pass: optional("SMTP_PASS"),
+    },
   },
 } as const;
 
 export function hasStripe(): boolean {
   return Boolean(config.stripe.secretKey);
+}
+
+// Allowed CORS origins, parsed from UI_ORIGIN (comma-separated for multiple
+// environments). "*" means reflect any origin — acceptable for a Bearer-token
+// API but should be pinned to the real UI domain(s) in production.
+export function corsOrigins(): string[] {
+  return config.server.uiOrigin
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function stripeSuccessUrl(): string {

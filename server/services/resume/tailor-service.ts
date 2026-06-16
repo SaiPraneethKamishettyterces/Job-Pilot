@@ -13,7 +13,7 @@ import {
   type TailorResult,
 } from "./resume-content.js";
 import { toDocx, toMarkdown } from "./resume-renderer.js";
-import { putArtifact, buildKey, type StoredArtifact } from "../storage/artifact-storage.js";
+import { putArtifact, type StoredArtifact } from "../storage/artifact-storage.js";
 import { effectiveFullName, type CandidateProfile } from "../profile/candidate-profile.js";
 
 // Resume tailoring — the single chokepoint that routes through the skill.

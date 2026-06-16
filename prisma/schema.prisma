@@ -16,6 +16,8 @@ model User {
   authProviderId String?  @unique
   avatarUrl      String?
   onboardingDone Boolean  @default(false)
+  emailVerified  Boolean  @default(false)
+  emailVerifiedAt DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

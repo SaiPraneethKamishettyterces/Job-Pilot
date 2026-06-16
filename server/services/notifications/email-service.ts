@@ -13,19 +13,40 @@ export interface EmailMessage {
   body: string;
 }
 
+// Cached nodemailer transport (created on first SMTP send).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let smtpTransport: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getSmtpTransport(): Promise<any> {
+  if (smtpTransport) return smtpTransport;
+  const { smtp } = config.notifications;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodemailer = (await import("nodemailer")) as any;
+  smtpTransport = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
+  });
+  return smtpTransport;
+}
+
 async function deliver(msg: EmailMessage): Promise<void> {
   if (!config.notifications.emailEnabled) return;
-  switch (config.notifications.emailTransport) {
-    case "smtp":
-      // Seam for a real SMTP/provider client. Not wired (no keys in scope).
-      logger.warn({ to: msg.to, subject: msg.subject }, "Email transport 'smtp' selected but not configured — falling back to log");
-      logger.info({ from: config.notifications.fromAddress, ...msg }, "EMAIL (would send via SMTP)");
-      return;
-    case "log":
-    default:
-      logger.info({ from: config.notifications.fromAddress, to: msg.to, subject: msg.subject, body: msg.body }, "EMAIL (log transport)");
-      return;
+  const { emailTransport, fromAddress, smtp } = config.notifications;
+
+  // SMTP only when actually configured; otherwise fall back to log so dev/test
+  // never silently require a provider.
+  if (emailTransport === "smtp" && smtp.host) {
+    const transport = await getSmtpTransport();
+    await transport.sendMail({ from: fromAddress, to: msg.to, subject: msg.subject, text: msg.body });
+    logger.info({ to: msg.to, subject: msg.subject }, "EMAIL sent via SMTP");
+    return;
   }
+  if (emailTransport === "smtp" && !smtp.host) {
+    logger.warn("NOTIFY_EMAIL_TRANSPORT=smtp but SMTP_HOST is unset — falling back to log transport");
+  }
+  logger.info({ from: fromAddress, to: msg.to, subject: msg.subject, body: msg.body }, "EMAIL (log transport)");
 }
 
 /** Look up a user's email, then deliver. Safe to call fire-and-forget. */
@@ -40,6 +61,22 @@ export async function emailUser(userId: string, subject: string, body: string): 
 }
 
 // ─── Notification templates ──────────────────────────────────────────────────
+
+export async function sendPasswordResetEmail(userId: string, resetUrl: string): Promise<void> {
+  await emailUser(
+    userId,
+    "Reset your JobPilot password",
+    `We received a request to reset your password.\n\nReset it here (link expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can ignore this email.`,
+  );
+}
+
+export async function sendVerificationEmail(userId: string, verifyUrl: string): Promise<void> {
+  await emailUser(
+    userId,
+    "Verify your JobPilot email",
+    `Welcome to JobPilot! Please verify your email address:\n\n${verifyUrl}\n\nThis link expires in 24 hours.`,
+  );
+}
 
 export async function notifyRunCompleted(
   userId: string,
