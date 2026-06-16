@@ -22,30 +22,32 @@ export interface RetryResult {
 
 /** Retry a single application's document generation, respecting the attempt cap. */
 export async function retryApplication(id: string): Promise<RetryResult> {
-  const app = await prisma.application.findUnique({ where: { id } });
-  if (!app) return { retried: false, reason: "Application not found" };
+  const max = config.automation.retry.maxAttempts;
 
-  if (!RETRYABLE.includes(app.status as (typeof RETRYABLE)[number])) {
+  // Atomic claim: flip FAILED→SHORTLISTED and bump retryCount in ONE conditional
+  // write. Only one caller (across multiple Cloud Run instances / the worker +
+  // a manual click) can win — the others get count 0 and skip. This is what makes
+  // the in-process retry worker safe under autoscaling without a distributed lock.
+  const claim = await prisma.application.updateMany({
+    where: { id, status: { in: RETRYABLE as unknown as never[] }, retryCount: { lt: max } },
+    data: { status: "SHORTLISTED" as never, retryCount: { increment: 1 }, failureReason: null },
+  });
+
+  if (claim.count === 0) {
+    // Didn't claim: not found, not retryable, over cap, or already claimed.
+    const app = await prisma.application.findUnique({ where: { id }, select: { status: true, retryCount: true } });
+    if (!app) return { retried: false, reason: "Application not found" };
+    if (app.retryCount >= max) {
+      await prisma.applicationEvent.create({
+        data: { applicationId: id, type: "retry_exhausted", description: `Retry limit reached (${app.retryCount}/${max})` },
+      });
+      return { retried: false, reason: `Retry limit reached (${app.retryCount}/${max})`, retryCount: app.retryCount };
+    }
     return { retried: false, reason: `Status ${app.status} is not retryable` };
   }
 
-  const max = config.automation.retry.maxAttempts;
-  if (app.retryCount >= max) {
-    await prisma.applicationEvent.create({
-      data: {
-        applicationId: id,
-        type: "retry_exhausted",
-        description: `Retry limit reached (${app.retryCount}/${max})`,
-      },
-    });
-    return { retried: false, reason: `Retry limit reached (${app.retryCount}/${max})`, retryCount: app.retryCount };
-  }
-
-  const attempt = app.retryCount + 1;
-  await prisma.application.update({
-    where: { id },
-    data: { retryCount: attempt, status: "SHORTLISTED" as never, failureReason: null },
-  });
+  const claimed = await prisma.application.findUnique({ where: { id }, select: { retryCount: true } });
+  const attempt = claimed?.retryCount ?? max;
   await prisma.applicationEvent.create({
     data: { applicationId: id, type: "retry_started", description: `Retry attempt ${attempt}/${max}` },
   });

@@ -6,7 +6,7 @@ import { badRequest, notFound } from "../lib/errors.js";
 import { prisma } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { applicationRepository } from "../repositories/application-repository.js";
-import { applicationUpdateSchema } from "../../shared/validation.js";
+import { applicationUpdateSchema, answerQuestionsSchema } from "../../shared/validation.js";
 import { generateApplicationDocuments } from "../services/application/application-generator.js";
 import { retryApplication } from "../services/application/retry-service.js";
 import { answerQuestions } from "../services/application/qa-generator.js";
@@ -105,10 +105,9 @@ applicationsRouter.post("/:id/answers", requireAuth, asyncHandler(async (req: Au
   const app = await prisma.application.findFirst({ where: { id, userId: req.userId! }, include: { job: true } });
   if (!app) throw notFound("Application not found");
 
-  const questions = Array.isArray(req.body?.questions)
-    ? (req.body.questions as unknown[]).filter((q): q is string => typeof q === "string" && q.trim().length > 0)
-    : [];
-  if (!questions.length) throw badRequest("Provide a non-empty 'questions' array");
+  const parsed = answerQuestionsSchema.safeParse(req.body);
+  if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? "Provide a non-empty 'questions' array (max 50)");
+  const questions = parsed.data.questions;
 
   const profile = await loadCandidateProfile(req.userId!);
   if (!profile) throw notFound("User profile not found");

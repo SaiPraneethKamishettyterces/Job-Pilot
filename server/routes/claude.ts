@@ -1,22 +1,22 @@
 import { Router } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { generateCoverLetterStream, countInputTokens } from "../services/ai/ai-service.js";
+import { requireAuth } from "../lib/auth-middleware.js";
+import { claudeApplySchema } from "../../shared/validation.js";
 
 export const claudeRouter = Router();
 
 // POST /api/claude/apply
 // Generates a personalised cover letter / application text, streamed back.
-claudeRouter.post("/apply", async (req, res) => {
-  const { jobDescription, userProfile, tone = "professional" } = req.body as {
-    jobDescription: string;
-    userProfile: {
-      name: string;
-      skills: string[];
-      experience: string;
-      targetRole?: string;
-    };
-    tone?: string;
-  };
+// Auth + validation are required: this triggers a paid Claude call, so it must
+// not be an open, unauthenticated, unbounded endpoint (token-burn vector).
+claudeRouter.post("/apply", requireAuth, async (req, res) => {
+  const parsed = claudeApplySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" });
+    return;
+  }
+  const { jobDescription, userProfile, tone = "professional" } = parsed.data;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -40,7 +40,7 @@ claudeRouter.post("/apply", async (req, res) => {
 
 // POST /api/claude/count-tokens
 // Estimate cost before sending, using the token counting API.
-claudeRouter.post("/count-tokens", async (req, res) => {
+claudeRouter.post("/count-tokens", requireAuth, async (req, res) => {
   const { messages, system } = req.body as {
     messages: Anthropic.MessageParam[];
     system?: string;

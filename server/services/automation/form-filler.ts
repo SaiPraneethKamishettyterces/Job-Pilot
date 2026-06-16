@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import { env } from "../../lib/env.js";
+import { config } from "../../lib/config.js";
 import { logger } from "../../lib/logger.js";
 import { getArtifact } from "../storage/artifact-storage.js";
 import { answerQuestion, type AnswerContext } from "../application/qa-generator.js";
@@ -259,6 +260,22 @@ export async function fillApplication(args: {
   const { pkg, profile, ctx } = args;
   if (!pkg.applyUrl) {
     return { status: "failed", code: "error", reason: "No apply URL", filledFields: [], submitted: false };
+  }
+
+  // Assisted mode (default, supported in production): we deliberately do NOT
+  // launch a headless browser. The prepared autofill package (standard fields +
+  // selectors), tailored resume, and answers are ready for the user (or a future
+  // browser extension) to submit in one assisted step. This keeps the prod image
+  // small and Cloud Run memory low. Set AUTOMATION_MODE=auto to enable headless
+  // Playwright form-filling (requires Chromium in the runtime image).
+  if (config.automation.mode !== "auto") {
+    return {
+      status: "assisted_required",
+      code: "unavailable",
+      reason: "Assisted mode: your application is prepared — open the apply link and submit using the autofill package (resume + answers ready).",
+      filledFields: [],
+      submitted: false,
+    };
   }
 
   let chromium;

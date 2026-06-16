@@ -92,13 +92,13 @@ export const onboardingSchema = z.object({
   githubUrl: z.string().optional(),
   portfolioUrl: z.string().optional(),
   workAuthorization: z.string().optional(),
-  yearsExperience: z.number().optional(),
+  yearsExperience: z.number().min(0).max(60).optional(),
   targetRoles: z.array(z.string()),
   targetCompanies: z.array(z.string()),
   blockedCompanies: z.array(z.string()),
   locations: z.array(z.string()),
   remotePreference: z.string(),
-  minSalary: z.number().optional(),
+  minSalary: z.number().min(0).max(10_000_000).optional(),
   applicationsPerDay: z.number().min(1).max(50),
   approvalMode: approvalModeEnum,
   matchThreshold: z.number().min(50).max(95),
@@ -162,3 +162,23 @@ export const applicationUpdateSchema = z.object({
   hiringManagerEmail: z.string().email().optional(),
 });
 export type ApplicationUpdateInput = z.infer<typeof applicationUpdateSchema>;
+
+// Batch question-answering. Bounded to prevent unbounded AI fan-out / token burn.
+export const answerQuestionsSchema = z.object({
+  questions: z.array(z.string().trim().min(1).max(2000)).min(1).max(50),
+});
+export type AnswerQuestionsInput = z.infer<typeof answerQuestionsSchema>;
+
+// ─── Claude (interactive cover-letter / token-count) ─────────────────────────
+
+export const claudeApplySchema = z.object({
+  jobDescription: z.string().min(1).max(20000),
+  userProfile: z.object({
+    name: z.string().max(200),
+    skills: z.array(z.string().max(100)).max(100),
+    experience: z.string().max(10000),
+    targetRole: z.string().max(200).optional(),
+  }),
+  tone: z.enum(["professional", "friendly", "concise"]).optional(),
+});
+export type ClaudeApplyInput = z.infer<typeof claudeApplySchema>;

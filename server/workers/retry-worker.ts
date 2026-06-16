@@ -1,6 +1,7 @@
 import { logger } from "../lib/logger.js";
 import { config } from "../lib/config.js";
 import { processRetryBatch } from "../services/application/retry-service.js";
+import { recoverStuckRuns } from "./run-recovery.js";
 
 // Lightweight in-process scheduler that periodically retries applications which
 // failed during document generation. Enabled by config (off in test). For a
@@ -22,6 +23,9 @@ export function startRetryWorker(): void {
   timer = setInterval(() => {
     processRetryBatch().catch((err) => {
       logger.error({ err: String(err) }, "Retry worker batch error");
+    });
+    recoverStuckRuns().catch((err) => {
+      logger.error({ err: String(err) }, "Stuck-run recovery error");
     });
   }, intervalMs);
   // Don't keep the process alive solely for this timer.

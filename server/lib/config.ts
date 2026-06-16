@@ -94,6 +94,11 @@ export const config = {
 
   // ── Automation / pipeline ───────────────────────────────────────────────
   automation: {
+    // "assisted" (default, supported prod mode): prepare the autofill package +
+    //   documents and hand off to the user — no headless browser, so the image
+    //   stays small and Cloud Run memory stays low. "auto": opt-in headless
+    //   Playwright form-fill (requires Chromium in the image + ≥1GiB memory).
+    mode: (optional("AUTOMATION_MODE", "assisted") === "auto" ? "auto" : "assisted") as "assisted" | "auto",
     autoSubmit: bool("AUTO_SUBMIT", false),
     maxJobsPerRun: num("MAX_JOBS_PER_RUN", 60),
     // Daily application cap fallback when a user has no preference set.
@@ -104,6 +109,9 @@ export const config = {
       intervalMinutes: num("RETRY_INTERVAL_MINUTES", 15),
       maxAttempts: num("RETRY_MAX_ATTEMPTS", 3),
       batchSize: num("RETRY_BATCH_SIZE", 10),
+      // A pipeline run left in a non-terminal state longer than this is treated
+      // as stuck (e.g. the instance that started it was recycled) and recovered.
+      stuckRunMinutes: num("STUCK_RUN_MINUTES", 20),
     },
   },
 

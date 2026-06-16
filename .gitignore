@@ -36,8 +36,8 @@ uploads/
 # Generated application artifacts (resumes, packages) — local-disk store
 artifacts/
 
-# Prisma
-prisma/migrations/
+# Prisma — migrations ARE version-controlled (required for `prisma migrate
+# deploy` in production). Do not ignore them.
 
 # Scratch / working notes
 status_temp.md
