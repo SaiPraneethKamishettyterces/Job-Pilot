@@ -17,7 +17,7 @@ const MIME_BY_EXT: Record<string, string> = {
 // Ownership is enforced from the key: the storage layout is
 // applications/<userId>/<...>, so the userId segment must match the caller.
 filesRouter.get(
-  "/applications/:userId/*",
+  "/applications/:userId/*splat",
   requireAuth,
   asyncHandler(async (req: AuthRequest, res) => {
     const ownerId = req.params["userId"] as string;
