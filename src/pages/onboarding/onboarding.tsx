@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sparkles, ChevronRight, ChevronLeft, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -43,15 +43,14 @@ const DEFAULT_DATA: OnboardingFormData = {
 export function OnboardingPage() {
   const navigate = useNavigate();
   const { token, user, markOnboardingDone } = useAuth();
-
-  // Already completed — skip straight to dashboard
-  if (user?.onboardingDone) {
-    navigate("/dashboard", { replace: true });
-    return null;
-  }
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<OnboardingFormData>(DEFAULT_DATA);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Already completed — skip straight to dashboard (effect, not during render).
+  useEffect(() => {
+    if (user?.onboardingDone) navigate("/dashboard", { replace: true });
+  }, [user?.onboardingDone, navigate]);
 
   const update = (partial: Partial<OnboardingFormData>) =>
     setFormData((prev) => ({ ...prev, ...partial }));

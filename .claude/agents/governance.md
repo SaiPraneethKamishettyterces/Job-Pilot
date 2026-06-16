@@ -1,0 +1,1 @@
+../../../terces-ai-ops/agents/executable/governance.md

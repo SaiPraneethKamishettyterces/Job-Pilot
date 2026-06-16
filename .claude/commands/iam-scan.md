@@ -1,0 +1,1 @@
+../../../terces-ai-ops/commands/shared/technical/iam-scan.md
