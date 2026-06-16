@@ -6,15 +6,20 @@
 // "claude-haiku-4-5" vs "claude-haiku-4-5-20251001" mismatch over-billed haiku
 // at opus rates).
 
+import { config } from "../../lib/config.js";
+
+// Model ids default to the shipped models but can be overridden via centralized
+// config (ANTHROPIC_MODEL_*), e.g. to pin a dated snapshot per environment.
 export const MODELS = {
-  opus: "claude-opus-4-8",
-  sonnet: "claude-sonnet-4-6",
-  haiku: "claude-haiku-4-5-20251001",
+  opus: config.ai.modelOpus || "claude-opus-4-8",
+  sonnet: config.ai.modelSonnet || "claude-sonnet-4-6",
+  haiku: config.ai.modelHaiku || "claude-haiku-4-5-20251001",
 } as const;
 
 export type ModelId = (typeof MODELS)[keyof typeof MODELS];
 
-// USD per 1M tokens, keyed by exact model id.
+// USD per 1M tokens, keyed by the resolved model id (so pricing stays correct
+// even when a model id is overridden via config).
 export const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
   [MODELS.opus]: { input: 5.0, output: 25.0 },
   [MODELS.sonnet]: { input: 3.0, output: 15.0 },

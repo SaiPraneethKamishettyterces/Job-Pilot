@@ -26,6 +26,43 @@ async function ensureDefaultPlan() {
   });
 }
 
+/**
+ * Initialize a user's data structures so the pipeline can run. In Job-Pilot's
+ * normalized schema this means ensuring the per-user UserPreference row exists
+ * (Job/Application rows are created per-run by the pipeline). This replaces the
+ * legacy engine's per-user BigQuery table creation with a clean relational model.
+ */
+export async function ensureUserInitialized(userId: string) {
+  await prisma.userPreference.upsert({
+    where: { userId },
+    create: { userId },
+    update: {},
+  });
+}
+
+/** Mark a subscription cancelled (from a verified cancellation webhook). */
+export async function cancelSubscription(userId: string) {
+  const existing = await prisma.subscription.findUnique({ where: { userId } });
+  if (!existing) return null;
+  const updated = await prisma.subscription.update({
+    where: { userId },
+    data: { status: "cancelled", cancelAtPeriodEnd: true },
+  });
+  await prisma.subscriptionEvent.create({
+    data: {
+      userId,
+      paymentProvider: existing.paymentProvider,
+      eventType: "subscription_cancelled",
+      oldStatus: existing.status,
+      newStatus: "cancelled",
+      processingStatus: "processed",
+      processedAt: new Date(),
+    },
+  });
+  logger.info({ userId }, "Subscription cancelled");
+  return updated;
+}
+
 export type ActivateOptions = {
   paymentProvider?: "stripe" | "manual" | "test";
   eventType?: string;
@@ -90,8 +127,10 @@ export async function activateSubscription(userId: string, opts: ActivateOptions
     },
   });
 
-  // 3. Create the run (T3) and 4. start the full pipeline (discover jobs →
-  //    score → generate applications). The frontend never triggers this.
+  // 3. Initialize the user's data structures (idempotent), then create the run
+  //    (T3) and 4. start the full pipeline (discover jobs → score → generate
+  //    applications). The frontend never triggers this.
+  await ensureUserInitialized(userId);
   const run = await createIngestionRun(userId, "payment_activated");
   triggerFullPipeline(run.id);
 

@@ -17,13 +17,26 @@ import {
 } from "@/services/api";
 
 // Statuses that belong in the review queue (the user must act on these).
-const REVIEW_STATUSES = ["NEEDS_APPROVAL", "ASSISTED_REQUIRED", "GENERATED", "SHORTLISTED"];
+const REVIEW_STATUSES = [
+  "NEEDS_APPROVAL", "ASSISTED_REQUIRED", "GENERATED", "SHORTLISTED",
+  "TAILORED_RESUME_READY", "READY_FOR_USER_SUBMIT", "FORM_FILLED_READY_TO_SUBMIT",
+  "CAPTCHA_REQUIRED", "LOGIN_REQUIRED", "QUESTION_NEEDS_REVIEW",
+];
+
+const STATUS_BADGE: Record<string, { variant: "warning" | "info" | "secondary" | "destructive" | "success"; label: string }> = {
+  NEEDS_APPROVAL: { variant: "warning", label: "Needs Approval" },
+  ASSISTED_REQUIRED: { variant: "info", label: "Assist Required" },
+  SHORTLISTED: { variant: "secondary", label: "Shortlisted" },
+  TAILORED_RESUME_READY: { variant: "info", label: "Resume Ready" },
+  READY_FOR_USER_SUBMIT: { variant: "warning", label: "Ready to Submit" },
+  FORM_FILLED_READY_TO_SUBMIT: { variant: "warning", label: "Form Filled" },
+  CAPTCHA_REQUIRED: { variant: "destructive", label: "CAPTCHA Required" },
+  LOGIN_REQUIRED: { variant: "destructive", label: "Login Required" },
+  QUESTION_NEEDS_REVIEW: { variant: "warning", label: "Question Review" },
+};
 
 function statusBadge(status: string) {
-  if (status === "NEEDS_APPROVAL") return { variant: "warning" as const, label: "Needs Approval" };
-  if (status === "ASSISTED_REQUIRED") return { variant: "info" as const, label: "Assist Required" };
-  if (status === "SHORTLISTED") return { variant: "secondary" as const, label: "Shortlisted" };
-  return { variant: "secondary" as const, label: status.replace(/_/g, " ") };
+  return STATUS_BADGE[status] ?? { variant: "secondary" as const, label: status.replace(/_/g, " ") };
 }
 
 export function ReviewPage() {

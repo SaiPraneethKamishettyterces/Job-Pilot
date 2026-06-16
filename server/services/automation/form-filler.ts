@@ -44,9 +44,23 @@ const IDENTITY_HINTS = [
 
 export type FillBlocker = "captcha" | "login" | "account_creation" | "otp";
 export type FillStatus = "submitted" | "needs_user_action" | "assisted_required" | "failed";
+// Fine-grained outcome code → maps deterministically to an ApplicationStatus.
+export type FillCode =
+  | "submitted"
+  | "captcha"
+  | "login"
+  | "account_creation"
+  | "otp"
+  | "question"
+  | "form_filled"
+  | "no_submit_button"
+  | "no_confirmation"
+  | "unavailable"
+  | "error";
 
 export interface FillResult {
   status: FillStatus;
+  code: FillCode;
   reason: string;
   blocker?: FillBlocker;
   filledFields: string[];
@@ -171,6 +185,7 @@ async function answerOpenQuestions(
         return {
           block: {
             status: "needs_user_action",
+            code: "question",
             reason: `Cannot confidently answer required question: "${label}" (${result.reason})`,
             filledFields: [],
             submitted: false,
@@ -243,7 +258,7 @@ export async function fillApplication(args: {
 }): Promise<FillResult> {
   const { pkg, profile, ctx } = args;
   if (!pkg.applyUrl) {
-    return { status: "failed", reason: "No apply URL", filledFields: [], submitted: false };
+    return { status: "failed", code: "error", reason: "No apply URL", filledFields: [], submitted: false };
   }
 
   let chromium;
@@ -252,6 +267,7 @@ export async function fillApplication(args: {
   } catch {
     return {
       status: "assisted_required",
+      code: "unavailable",
       reason: "Playwright is not available in this runtime; manual application required.",
       filledFields: [],
       submitted: false,
@@ -265,6 +281,7 @@ export async function fillApplication(args: {
     logger.warn({ err: String(err) }, "Playwright browser launch failed (browsers not installed?)");
     return {
       status: "assisted_required",
+      code: "unavailable",
       reason: "Browser could not launch (browsers not installed); manual application required.",
       filledFields: [],
       submitted: false,
@@ -280,6 +297,7 @@ export async function fillApplication(args: {
     if (blocker) {
       return {
         status: "needs_user_action",
+        code: blocker,
         reason: `Blocker detected: ${blocker}. Cannot proceed automatically.`,
         blocker,
         filledFields: filled,
@@ -306,6 +324,7 @@ export async function fillApplication(args: {
     if (!env.AUTO_SUBMIT) {
       return {
         status: "needs_user_action",
+        code: "form_filled",
         reason: "Form filled successfully; AUTO_SUBMIT is disabled (review + submit required).",
         filledFields: filled,
         submitted: false,
@@ -325,7 +344,7 @@ export async function fillApplication(args: {
       }
     }
     if (!clicked) {
-      return { status: "failed", reason: "Could not locate a submit button", filledFields: filled, submitted: false };
+      return { status: "failed", code: "no_submit_button", reason: "Could not locate a submit button", filledFields: filled, submitted: false };
     }
     try {
       await page.waitForLoadState("networkidle", { timeout: 20_000 });
@@ -333,11 +352,11 @@ export async function fillApplication(args: {
       /* ignore */
     }
     if (await confirmSubmission(page)) {
-      return { status: "submitted", reason: "Application submitted", filledFields: filled, submitted: true };
+      return { status: "submitted", code: "submitted", reason: "Application submitted", filledFields: filled, submitted: true };
     }
-    return { status: "failed", reason: "Submit clicked but no confirmation detected", filledFields: filled, submitted: false };
+    return { status: "failed", code: "no_confirmation", reason: "Submit clicked but no confirmation detected", filledFields: filled, submitted: false };
   } catch (err) {
-    return { status: "failed", reason: `Automation error: ${String(err)}`, filledFields: filled, submitted: false };
+    return { status: "failed", code: "error", reason: `Automation error: ${String(err)}`, filledFields: filled, submitted: false };
   } finally {
     await browser.close().catch(() => {});
   }

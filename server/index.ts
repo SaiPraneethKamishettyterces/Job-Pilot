@@ -16,13 +16,18 @@ import { jobsRouter } from "./routes/jobs.js";
 import { applicationsRouter } from "./routes/applications.js";
 import { statsRouter } from "./routes/stats.js";
 import { billingRouter } from "./routes/billing.js";
-import { subscriptionRouter } from "./routes/subscription.js";
+import { subscriptionRouter, stripeWebhookHandler } from "./routes/subscription.js";
 import { ingestionRouter } from "./routes/ingestion.js";
 import { filesRouter } from "./routes/files.js";
 
 const app = express();
 
 app.use(cors({ origin: env.UI_ORIGIN }));
+
+// Stripe webhook MUST receive the raw body to verify the signature, so it is
+// registered before express.json() consumes/parses the request body.
+app.post("/api/subscription/webhook", express.raw({ type: "application/json" }), stripeWebhookHandler);
+
 app.use(express.json());
 app.use(requestLogger);
 

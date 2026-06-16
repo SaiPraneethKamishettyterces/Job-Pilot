@@ -5,10 +5,23 @@ export type SubscriptionStatus = {
   planName: string | null;
   currentPeriodEnd: string | null;
   paymentProvider: string | null;
+  stripeEnabled: boolean;
 };
 
 export async function getSubscription(): Promise<SubscriptionStatus> {
   const { data } = await api.get<SubscriptionStatus>("/api/subscription");
+  return data;
+}
+
+// Start a Stripe Checkout session and return the redirect URL.
+export async function startCheckout(plan: string): Promise<{ url: string }> {
+  const { data } = await api.post<{ url: string }>("/api/subscription/checkout", { plan });
+  return data;
+}
+
+// Open the Stripe billing portal (manage / cancel).
+export async function openBillingPortal(): Promise<{ url: string }> {
+  const { data } = await api.post<{ url: string }>("/api/subscription/portal");
   return data;
 }
 

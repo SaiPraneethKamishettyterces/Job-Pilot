@@ -11,6 +11,7 @@ import { generateApplicationDocuments } from "../services/application/applicatio
 import { answerQuestions } from "../services/application/qa-generator.js";
 import { loadCandidateProfile } from "../services/profile/candidate-profile.js";
 import { fillApplication } from "../services/automation/form-filler.js";
+import { mapFillCodeToStatus } from "../services/application/status-map.js";
 import type { ApplicationPackage } from "../services/application/application-package.js";
 
 export const applicationsRouter = Router();
@@ -177,29 +178,23 @@ applicationsRouter.post("/:id/submit", requireAuth, asyncHandler(async (req: Aut
     },
   });
 
-  // Map the automation result onto the application lifecycle.
-  const statusMap: Record<string, string> = {
-    submitted: "APPLIED",
-    needs_user_action: "ASSISTED_REQUIRED",
-    assisted_required: "ASSISTED_REQUIRED",
-    failed: "FAILED",
-  };
-  const nextStatus = statusMap[result.status] ?? "ASSISTED_REQUIRED";
+  // Map the automation outcome onto the application lifecycle (deterministic).
+  const nextStatus = mapFillCodeToStatus(result.code);
   await prisma.application.update({
     where: { id },
     data: {
       status: nextStatus as never,
-      ...(result.status === "submitted" ? { appliedAt: new Date() } : {}),
-      ...(result.status === "failed" ? { failureReason: result.reason } : {}),
+      ...(nextStatus === "APPLIED" ? { appliedAt: new Date() } : {}),
+      ...(nextStatus === "FAILED_TECHNICAL" ? { failureReason: result.reason } : {}),
     },
   });
   await prisma.applicationEvent.create({
     data: {
       applicationId: id,
-      type: result.status === "submitted" ? "submitted" : "submit_attempted",
+      type: nextStatus === "APPLIED" ? "submitted" : "submit_attempted",
       description: result.reason,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      metadata: { blocker: result.blocker ?? null, filledFields: result.filledFields } as any,
+      metadata: { code: result.code, blocker: result.blocker ?? null, filledFields: result.filledFields } as any,
     },
   });
   res.json({ result, status: nextStatus });
