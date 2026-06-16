@@ -15,6 +15,7 @@ import {
   UserCircle,
   HelpCircle,
   Mail,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -32,6 +33,7 @@ const navItems = [
   { to: "/resume", icon: FileText, label: "Resume" },
   { to: "/profile", icon: UserCircle, label: "Profile" },
   { to: "/analytics", icon: BarChart2, label: "Analytics" },
+  { to: "/activity", icon: Activity, label: "Activity" },
 ];
 
 const secondaryNav = [

@@ -86,7 +86,12 @@ export function ReviewPage() {
       else toast.warning(r.result.reason);
       invalidate();
     },
-    onError: () => toast.error("Submission failed"),
+    onError: (err: unknown) => {
+      // Surface the server's reason (e.g. the automation-consent gate) instead
+      // of a generic failure.
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "Submission failed");
+    },
   });
   const generate = useMutation({
     mutationFn: (id: string) => generateDocuments(id),
@@ -231,6 +236,15 @@ export function ReviewPage() {
               )}
 
               <Separator />
+
+              <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>
+                  "Auto-fill &amp; Submit" prepares and fills the application form on your behalf.
+                  It never bypasses CAPTCHA, logins, or bot protection, and requires your data-processing
+                  consent (set in Profile → Application Details). Review everything above before submitting.
+                </span>
+              </div>
 
               <div className="flex flex-wrap gap-3">
                 <Button onClick={() => approve.mutate(app.id)} disabled={approve.isPending} variant="success">

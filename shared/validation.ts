@@ -37,46 +37,49 @@ export const approvalModeEnum = z.enum([
 // Generic, reusable application fields — the answers common ATS forms ask, stored
 // once on the user profile. All optional (the user fills what they want); names
 // default from `fullName`. Role-specific answers are handled per-application.
+// Fields are `.nullish()` (optional + nullable) so editing surfaces can either
+// omit a key (leave as-is) or send `null` to explicitly clear it. Consent is a
+// non-nullable boolean column, so it stays `.optional()` only.
 export const genericProfileFields = {
   // identity
-  legalFirstName: z.string().optional(),
-  legalLastName: z.string().optional(),
-  preferredName: z.string().optional(),
+  legalFirstName: z.string().nullish(),
+  legalLastName: z.string().nullish(),
+  preferredName: z.string().nullish(),
   // address
-  addressLine1: z.string().optional(),
-  addressLine2: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  zipCode: z.string().optional(),
-  country: z.string().optional(),
-  personalWebsite: z.string().optional(),
+  addressLine1: z.string().nullish(),
+  addressLine2: z.string().nullish(),
+  city: z.string().nullish(),
+  state: z.string().nullish(),
+  zipCode: z.string().nullish(),
+  country: z.string().nullish(),
+  personalWebsite: z.string().nullish(),
   // work auth
-  requiresSponsorship: z.boolean().optional(),
-  visaStatus: z.string().optional(),
+  requiresSponsorship: z.boolean().nullish(),
+  visaStatus: z.string().nullish(),
   // employment
-  currentEmployer: z.string().optional(),
-  currentTitle: z.string().optional(),
+  currentEmployer: z.string().nullish(),
+  currentTitle: z.string().nullish(),
   // education
-  highestEducation: z.string().optional(),
-  school: z.string().optional(),
-  degree: z.string().optional(),
-  major: z.string().optional(),
-  graduationYear: z.string().optional(),
+  highestEducation: z.string().nullish(),
+  school: z.string().nullish(),
+  degree: z.string().nullish(),
+  major: z.string().nullish(),
+  graduationYear: z.string().nullish(),
   // logistics
-  willingToRelocate: z.boolean().optional(),
-  noticePeriod: z.string().optional(),
-  availabilityToStart: z.string().optional(),
-  desiredSalary: z.string().optional(),
-  coverLetterPreference: z.string().optional(),
+  willingToRelocate: z.boolean().nullish(),
+  noticePeriod: z.string().nullish(),
+  availabilityToStart: z.string().nullish(),
+  desiredSalary: z.string().nullish(),
+  coverLetterPreference: z.string().nullish(),
   // sourcing
-  howHeard: z.string().optional(),
-  referralName: z.string().optional(),
-  referralSource: z.string().optional(),
+  howHeard: z.string().nullish(),
+  referralName: z.string().nullish(),
+  referralSource: z.string().nullish(),
   // EEO (voluntary)
-  gender: z.string().optional(),
-  raceEthnicity: z.string().optional(),
-  veteranStatus: z.string().optional(),
-  disabilityStatus: z.string().optional(),
+  gender: z.string().nullish(),
+  raceEthnicity: z.string().nullish(),
+  veteranStatus: z.string().nullish(),
+  disabilityStatus: z.string().nullish(),
   // consent
   consentToDataProcessing: z.boolean().optional(),
 } as const;

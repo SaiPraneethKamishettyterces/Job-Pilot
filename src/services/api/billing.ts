@@ -43,11 +43,6 @@ export type CompanyBillingMetrics = {
     avgCostPerUser: number;
     avgCostPerApplication: number;
   };
-  cloud: {
-    status: "not_connected";
-    dataAvailableAt: string;
-    backlogItems: string[];
-  };
 };
 
 export type UserBillingRow = {

@@ -29,8 +29,8 @@ const FEATURE_TO_STEP: Record<string, string> = {
 
 // ─── GET /api/billing/company ─────────────────────────────────────────────────
 // Company-wide executive cost metrics sourced from PostgreSQL (AIUsageEvent).
-// GCP cloud costs are flagged as backlog — BigQuery mart is available but not
-// yet connected to this backend service.
+// Scope: Claude AI spend + platform usage only. Cloud/infra cost reporting
+// belongs to the separate data-platform product, not this app-tier service.
 billingRouter.get("/company", asyncHandler(async (_req, res) => {
   const { todayStart, weekStart, monthStart, thirtyDaysAgo } = dateRanges();
 
@@ -161,19 +161,6 @@ billingRouter.get("/company", asyncHandler(async (_req, res) => {
         avgCostPerUser: totalUsers > 0 ? parseFloat((totalCost / totalUsers).toFixed(4)) : 0,
         avgCostPerApplication:
           totalApplications > 0 ? parseFloat((totalCost / totalApplications).toFixed(4)) : 0,
-      },
-      // GCP billing data lives in BigQuery (mart_billing_daily, mart_billing_monthly)
-      // but this backend has no BigQuery client configured yet.
-      cloud: {
-        status: "not_connected" as const,
-        dataAvailableAt: "BigQuery: gcpmultiverse-fnb-dev.fnb_gold.mart_billing_daily",
-        backlogItems: [
-          "Add @google-cloud/bigquery client to backend",
-          "Query mart_billing_daily for Cloud Run + Cloud SQL costs",
-          "Query mart_billing_monthly for GCP hosting cost trends",
-          "Set up billing export for gcpmultiverse-fnb-prod (currently dev only)",
-          "Add per-service cost breakdown (Cloud Run, Cloud SQL, BigQuery, Pub/Sub)",
-        ],
       },
     });
   }

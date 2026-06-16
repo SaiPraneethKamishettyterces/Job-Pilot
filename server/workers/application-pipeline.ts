@@ -14,6 +14,8 @@ import { runIngestion } from "../services/ingestion/ingestion-orchestrator.js";
 import { scoreJobMatch, type ProfileSnapshot } from "../services/matching/match-scorer.js";
 import type { ParsedJob } from "../services/job-discovery/job-parser.js";
 import { generateApplicationDocuments } from "../services/application/application-generator.js";
+import { remainingApplications, getPlanLimits } from "../services/billing/usage-limits.js";
+import { notifyRunCompleted } from "../services/notifications/email-service.js";
 
 const WORKER_NAME = "application-pipeline-worker";
 
@@ -72,7 +74,18 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
   try {
     const snapshot = await loadSnapshot(userId);
     const prefs = await prisma.userPreference.findUnique({ where: { userId } });
-    const cap = Math.max(1, prefs?.applicationsPerDay ?? 10);
+    // Cap shortlist by BOTH the user's per-run/day preference AND the remaining
+    // monthly allowance from their plan. The plan limit is the hard ceiling.
+    const dailyCap = Math.max(1, prefs?.applicationsPerDay ?? 10);
+    const monthlyRemaining = await remainingApplications(userId);
+    const planLimits = await getPlanLimits(userId);
+    const cap = Math.max(0, Math.min(dailyCap, monthlyRemaining));
+    if (monthlyRemaining <= 0) {
+      logger.info(
+        { userId, plan: planLimits.planName, limit: planLimits.applicationsPerMonth },
+        "Monthly application limit reached — no new applications will be generated this run",
+      );
+    }
     const primaryResume = await prisma.resume.findFirst({
       where: { userId },
       orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
@@ -153,6 +166,8 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
       },
     });
     logger.info({ runId, userId, shortlisted, applications: done, needsApproval }, "Application pipeline completed");
+    // Notify the user their run finished (fire-and-forget; never blocks the run).
+    void notifyRunCompleted(userId, { applications: done, needsApproval });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ runId, userId, err: msg }, "Application pipeline failed");

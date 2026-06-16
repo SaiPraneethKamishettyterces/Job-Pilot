@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Filter, Search, Loader2, Archive, Briefcase } from "lucide-react";
+import { ExternalLink, Filter, Search, Loader2, Archive, Briefcase, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatRelativeDate } from "@/lib/utils";
-import { getApplications, archiveApplication } from "@/services/api";
+import { getApplications, archiveApplication, retryApplication } from "@/services/api";
 import type { Application, ApplicationStatus } from "@/types";
 
 const STATUS_CONFIG: Record<ApplicationStatus, { label: string; variant: "default" | "success" | "warning" | "info" | "secondary" | "destructive" | "outline" }> = {
@@ -62,6 +62,15 @@ export function ApplicationsPage() {
       queryClient.invalidateQueries({ queryKey: ["stats"] });
     },
     onError: () => toast.error("Failed to archive application"),
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: retryApplication,
+    onSuccess: (r) => {
+      toast[r.retried ? "success" : "error"](r.retried ? "Retry succeeded — documents regenerated" : r.reason);
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+    },
+    onError: () => toast.error("Retry failed"),
   });
 
   const applications: Application[] = data?.applications ?? [];
@@ -195,6 +204,26 @@ export function ApplicationsPage() {
                               </a>
                             </TooltipTrigger>
                             <TooltipContent>View job posting</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {(app.status === "FAILED" || app.status === "FAILED_TECHNICAL") && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-primary"
+                                onClick={() => retryMutation.mutate(app.id)}
+                                disabled={retryMutation.isPending}
+                              >
+                                {retryMutation.isPending && retryMutation.variables === app.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Retry generation</TooltipContent>
                           </Tooltip>
                         )}
                         {app.status !== "ARCHIVED" && (

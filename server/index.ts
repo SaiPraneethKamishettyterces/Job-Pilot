@@ -19,6 +19,9 @@ import { billingRouter } from "./routes/billing.js";
 import { subscriptionRouter, stripeWebhookHandler } from "./routes/subscription.js";
 import { ingestionRouter } from "./routes/ingestion.js";
 import { filesRouter } from "./routes/files.js";
+import { activityRouter } from "./routes/activity.js";
+import { accountRouter } from "./routes/account.js";
+import { startRetryWorker } from "./workers/retry-worker.js";
 
 const app = express();
 
@@ -46,6 +49,8 @@ app.use("/api/billing", billingRouter);
 app.use("/api/subscription", subscriptionRouter);
 app.use("/api/ingestion", ingestionRouter);
 app.use("/api/files", filesRouter);
+app.use("/api/activity", activityRouter);
+app.use("/api/account", accountRouter);
 
 // JSON 404 for any unmatched API route (before the SPA catch-all below).
 app.use("/api", notFoundHandler);
@@ -54,7 +59,8 @@ if (env.NODE_ENV === "production") {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const distPath = path.resolve(__dirname, "..");
   app.use(express.static(distPath));
-  app.get("*", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
+  // Express 5 dropped bare "*" wildcards — use a named splat for the SPA fallback.
+  app.get("/*splat", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
 }
 
 // Central error handler — must be registered last.
@@ -62,4 +68,6 @@ app.use(errorHandler);
 
 app.listen(env.PORT, () => {
   logger.info(`BFF running on http://localhost:${env.PORT}`);
+  // Start background workers (e.g. failed-application retry). No-op when disabled.
+  startRetryWorker();
 });

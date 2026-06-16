@@ -9,6 +9,7 @@ import { logger } from "../lib/logger.js";
 import { hasAnthropic, completeJson } from "../services/ai/ai-service.js";
 import { TASK_MODEL } from "../services/ai/model-config.js";
 import { RESUME_PARSE_PROMPT } from "../services/ai/prompts.js";
+import { ingestResume, type ParsedResume } from "../services/profile/resume-ingest.js";
 
 export const resumesRouter = Router();
 
@@ -60,23 +61,35 @@ resumesRouter.post("/upload-parse", requireAuth, upload.single("resume"), asyncH
   try {
     const rawText = await extractText(filePath, mimetype);
 
-    if (!hasAnthropic()) {
-      res.json({ message: "File uploaded", rawText: rawText.slice(0, 500), parsed: null });
-      return;
+    // Parse with Claude when available; otherwise persist the raw text only so
+    // resume tailoring still has a base resume to work from.
+    let parsed: ParsedResume | null = null;
+    if (hasAnthropic()) {
+      const { data } = await completeJson({
+        model: TASK_MODEL.resumeParse,
+        maxTokens: 4096,
+        messages: [{ role: "user", content: `${RESUME_PARSE_PROMPT}\n\n${rawText}` }],
+      });
+      parsed = data as ParsedResume;
     }
 
-    const { data: parsed } = await completeJson({
-      model: TASK_MODEL.resumeParse,
-      maxTokens: 4096,
-      messages: [{ role: "user", content: `${RESUME_PARSE_PROMPT}\n\n${rawText}` }],
+    // Persist the Resume row (rawText → tailoring) and auto-populate any blank
+    // profile fields from the parse (non-destructive).
+    const { resumeId, filledFields } = await ingestResume(req.userId!, parsed, {
+      fileName,
+      fileType: mimetype,
+      originalFileUrl: fileName,
+      rawText,
     });
-    logger.info({ userId: req.userId, fileName }, "Resume parsed");
+    logger.info({ userId: req.userId, fileName, resumeId, filledFields }, "Resume ingested");
 
     res.json({
-      message: "Resume parsed successfully",
+      message: parsed ? "Resume parsed and saved" : "Resume saved (parsing unavailable)",
       fileName,
+      resumeId,
       rawText: rawText.slice(0, 200),
       parsed,
+      autoPopulatedFields: filledFields,
     });
   } catch (err) {
     // Log the detail server-side; return a clean message (no internal leak).

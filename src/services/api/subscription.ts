@@ -1,10 +1,22 @@
 import { api } from "./client.js";
 
+export type PlanUsage = {
+  planName: string;
+  applicationsPerMonth: number;
+  tailoringsPerMonth: number;
+  automationEnabled: boolean;
+  applicationsUsed: number;
+  applicationsRemaining: number;
+  periodResetsAt: string;
+  active: boolean;
+};
+
 export type SubscriptionStatus = {
   status: "inactive" | "trial" | "active" | "past_due" | "cancelled";
   planName: string | null;
   currentPeriodEnd: string | null;
   paymentProvider: string | null;
+  usage?: PlanUsage;
   stripeEnabled: boolean;
 };
 

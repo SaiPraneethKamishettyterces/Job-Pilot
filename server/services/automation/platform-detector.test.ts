@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectPlatform } from "./platform-detector.js";
+import { detectPlatform, recognizeAts } from "./platform-detector.js";
 
 // Ported from Job_applying_agent/tests/test_platform_detector.py.
 describe("detectPlatform", () => {
@@ -24,5 +24,32 @@ describe("detectPlatform", () => {
     expect(detectPlatform(null)).toBe("unsupported");
     expect(detectPlatform(undefined)).toBe("unsupported");
     expect(detectPlatform("")).toBe("unsupported");
+  });
+});
+
+describe("recognizeAts", () => {
+  it("flags supported platforms as autofillable", () => {
+    const r = recognizeAts("https://boards.greenhouse.io/acme/jobs/1");
+    expect(r.platform).toBe("greenhouse");
+    expect(r.autofillSupported).toBe(true);
+    expect(r.vendor).toBe("Greenhouse");
+  });
+
+  it("recognizes known ATS vendors we cannot autofill yet", () => {
+    expect(recognizeAts("https://acme.wd1.myworkdayjobs.com/job/123")).toMatchObject({
+      platform: "unsupported",
+      vendor: "Workday",
+      autofillSupported: false,
+    });
+    expect(recognizeAts("https://jobs.smartrecruiters.com/acme/123").vendor).toBe("SmartRecruiters");
+    expect(recognizeAts("https://careers.icims.com/jobs/123").vendor).toBe("iCIMS");
+  });
+
+  it("returns null vendor for genuinely unknown hosts", () => {
+    expect(recognizeAts("https://careers.acme.com/123")).toMatchObject({
+      platform: "unsupported",
+      vendor: null,
+      autofillSupported: false,
+    });
   });
 });

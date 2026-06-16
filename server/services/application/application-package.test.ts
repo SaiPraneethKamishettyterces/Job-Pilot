@@ -59,4 +59,33 @@ describe("buildApplicationPackage", () => {
     expect(pkg.profile).not.toHaveProperty("gender");
     expect(pkg.profile).toHaveProperty("email");
   });
+
+  it("never leaks EEO values anywhere in the package (POLICY)", () => {
+    const pkg = buildApplicationPackage({
+      jobId: "j",
+      applyUrl: "https://boards.greenhouse.io/a/1",
+      profile: profile({
+        gender: "EEO_GENDER_SENTINEL",
+        raceEthnicity: "EEO_RACE_SENTINEL",
+        veteranStatus: "EEO_VET_SENTINEL",
+        disabilityStatus: "EEO_DIS_SENTINEL",
+      }),
+      resume: null,
+    });
+    const serialized = JSON.stringify(pkg);
+    for (const sentinel of ["EEO_GENDER_SENTINEL", "EEO_RACE_SENTINEL", "EEO_VET_SENTINEL", "EEO_DIS_SENTINEL"]) {
+      expect(serialized).not.toContain(sentinel);
+    }
+  });
+
+  it("recognizes an unsupported-but-known ATS and tells the user to apply manually", () => {
+    const pkg = buildApplicationPackage({
+      jobId: "j",
+      applyUrl: "https://acme.wd1.myworkdayjobs.com/job/1",
+      profile: profile(),
+      resume: null,
+    });
+    expect(pkg.platform).toBe("unsupported");
+    expect(pkg.warnings.some((w) => w.includes("Workday") && w.toLowerCase().includes("manually"))).toBe(true);
+  });
 });

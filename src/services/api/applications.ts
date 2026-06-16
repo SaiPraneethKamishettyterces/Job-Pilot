@@ -95,6 +95,13 @@ export async function submitApplication(
   return data;
 }
 
+export async function retryApplication(
+  id: string,
+): Promise<{ retried: boolean; status?: string; reason: string; retryCount?: number }> {
+  const { data } = await api.post(`/api/applications/${id}/retry`);
+  return data;
+}
+
 export async function answerApplicationQuestions(
   id: string,
   questions: string[],

@@ -8,6 +8,7 @@ import { logger } from "../lib/logger.js";
 import { applicationRepository } from "../repositories/application-repository.js";
 import { applicationUpdateSchema } from "../../shared/validation.js";
 import { generateApplicationDocuments } from "../services/application/application-generator.js";
+import { retryApplication } from "../services/application/retry-service.js";
 import { answerQuestions } from "../services/application/qa-generator.js";
 import { loadCandidateProfile } from "../services/profile/candidate-profile.js";
 import { fillApplication } from "../services/automation/form-filler.js";
@@ -82,6 +83,18 @@ applicationsRouter.post("/:id/generate", requireAuth, asyncHandler(async (req: A
 
   const result = await generateApplicationDocuments(id);
   logger.info({ applicationId: id, status: result.status }, "Documents generated via API");
+  res.json(result);
+}));
+
+// POST /api/applications/:id/retry — re-run document generation for an
+// application that failed, bounded by the per-app attempt cap.
+applicationsRouter.post("/:id/retry", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+  const id = req.params["id"] as string;
+  const app = await applicationRepository.findOwned(id, req.userId!);
+  if (!app) throw notFound("Application not found");
+
+  const result = await retryApplication(id);
+  if (!result.retried && result.reason.includes("not retryable")) throw badRequest(result.reason);
   res.json(result);
 }));
 
@@ -161,6 +174,18 @@ applicationsRouter.post("/:id/submit", requireAuth, asyncHandler(async (req: Aut
   const pkgDoc = app.documents.find((d) => d.type === "application_package");
   if (!pkgDoc?.content) throw badRequest("No application package — generate documents first");
   const pkg = JSON.parse(pkgDoc.content) as ApplicationPackage;
+
+  // Consent gate: automation that fills/submits forms on the user's behalf
+  // requires explicit data-processing consent (captured at onboarding / profile).
+  const consentProfile = await prisma.userProfile.findUnique({
+    where: { userId: req.userId! },
+    select: { consentToDataProcessing: true },
+  });
+  if (!consentProfile?.consentToDataProcessing) {
+    throw badRequest(
+      "Automation consent required. Enable 'consent to data processing' in your profile's Application Details before submitting.",
+    );
+  }
 
   const profile = await loadCandidateProfile(req.userId!);
   if (!profile) throw notFound("User profile not found");

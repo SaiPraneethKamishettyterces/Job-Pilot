@@ -98,6 +98,22 @@ export const config = {
     maxJobsPerRun: num("MAX_JOBS_PER_RUN", 60),
     // Daily application cap fallback when a user has no preference set.
     defaultApplicationsPerDay: num("DEFAULT_APPLICATIONS_PER_DAY", 10),
+    // Background retry of applications that failed during document generation.
+    retry: {
+      enabled: bool("RETRY_WORKER_ENABLED", NODE_ENV !== "test"),
+      intervalMinutes: num("RETRY_INTERVAL_MINUTES", 15),
+      maxAttempts: num("RETRY_MAX_ATTEMPTS", 3),
+      batchSize: num("RETRY_BATCH_SIZE", 10),
+    },
+  },
+
+  // ── Notifications (email) ─────────────────────────────────────────────────
+  // No provider keys required for local/test: the default transport logs the
+  // message. Set NOTIFY_EMAIL_TRANSPORT=smtp + SMTP_* to wire a real provider.
+  notifications: {
+    emailEnabled: bool("NOTIFY_EMAIL_ENABLED", true),
+    emailTransport: optional("NOTIFY_EMAIL_TRANSPORT", "log"), // log | smtp
+    fromAddress: optional("NOTIFY_FROM_ADDRESS", "JobPilot <no-reply@jobpilot.local>"),
   },
 } as const;
 

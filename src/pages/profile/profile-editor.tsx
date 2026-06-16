@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Save, Plus, X, User, Target, Briefcase } from "lucide-react";
+import { Loader2, Save, Plus, X, User, Target, Briefcase, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -414,6 +415,269 @@ function PreferencesTab({
   );
 }
 
+// ─── Application Details Tab (generic ATS questions, answered once) ──────────
+
+const GENERIC_TEXT_KEYS = [
+  "legalFirstName", "legalLastName", "preferredName",
+  "addressLine1", "addressLine2", "city", "state", "zipCode", "country", "personalWebsite",
+  "visaStatus", "currentEmployer", "currentTitle",
+  "highestEducation", "school", "degree", "major", "graduationYear",
+  "noticePeriod", "availabilityToStart", "desiredSalary", "coverLetterPreference",
+  "howHeard", "referralName", "referralSource",
+  "gender", "raceEthnicity", "veteranStatus", "disabilityStatus",
+] as const;
+
+type GenericTextKey = (typeof GENERIC_TEXT_KEYS)[number];
+
+function triToSelect(v: boolean | undefined): string {
+  return v === undefined ? "" : v ? "yes" : "no";
+}
+function selectToTri(v: string): boolean | undefined {
+  return v === "" ? undefined : v === "yes";
+}
+
+function ApplicationDetailsTab({
+  profile,
+  onSave,
+  isSaving,
+}: {
+  profile: UserProfile | null;
+  onSave: (data: Partial<UserProfile>) => void;
+  isSaving: boolean;
+}) {
+  const initText = () => {
+    const o = {} as Record<GenericTextKey, string>;
+    for (const k of GENERIC_TEXT_KEYS) o[k] = (profile?.[k] as string | undefined) ?? "";
+    return o;
+  };
+  const [text, setText] = useState<Record<GenericTextKey, string>>(initText);
+  const [requiresSponsorship, setRequiresSponsorship] = useState<boolean | undefined>(profile?.requiresSponsorship);
+  const [willingToRelocate, setWillingToRelocate] = useState<boolean | undefined>(profile?.willingToRelocate);
+  const [consent, setConsent] = useState<boolean>(Boolean(profile?.consentToDataProcessing));
+
+  useEffect(() => {
+    setText(initText());
+    setRequiresSponsorship(profile?.requiresSponsorship);
+    setWillingToRelocate(profile?.willingToRelocate);
+    setConsent(Boolean(profile?.consentToDataProcessing));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
+  const set = (k: GenericTextKey) => (v: string) => setText((t) => ({ ...t, [k]: v }));
+
+  const handleSave = () => {
+    // fullName is required by the profile schema — resend the existing value so
+    // this partial save validates without overwriting the Personal Info tab.
+    const payload: Partial<UserProfile> = { fullName: profile?.fullName ?? "" };
+    for (const k of GENERIC_TEXT_KEYS) {
+      (payload as Record<string, unknown>)[k] = text[k].trim() || null;
+    }
+    payload.requiresSponsorship = requiresSponsorship;
+    payload.willingToRelocate = willingToRelocate;
+    payload.consentToDataProcessing = consent;
+    onSave(payload);
+  };
+
+  const F = ({ k, label, placeholder }: { k: GenericTextKey; label: string; placeholder?: string }) => (
+    <div className="space-y-1.5">
+      <Label htmlFor={k}>{label}</Label>
+      <Input id={k} value={text[k]} placeholder={placeholder} onChange={(e) => set(k)(e.target.value)} />
+    </div>
+  );
+
+  const YesNo = ({ label, value, onChange }: { label: string; value: boolean | undefined; onChange: (b: boolean | undefined) => void }) => (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <Select value={triToSelect(value)} onValueChange={(v) => onChange(selectToTri(v))}>
+        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="yes">Yes</SelectItem>
+          <SelectItem value="no">No</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">
+        Standard questions most applications ask. Answered once and reused on every
+        application. Role-specific questions are handled per application during review.
+      </p>
+
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Legal identity</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <F k="legalFirstName" label="Legal first name" />
+          <F k="legalLastName" label="Legal last name" />
+          <F k="preferredName" label="Preferred name" />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address</h3>
+        <F k="addressLine1" label="Street address" placeholder="123 Main St" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <F k="city" label="City" />
+          <F k="state" label="State" />
+          <F k="zipCode" label="ZIP / Postal" />
+          <F k="country" label="Country" />
+        </div>
+        <F k="personalWebsite" label="Personal website" placeholder="https://…" />
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work authorization</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <YesNo label="Require visa sponsorship?" value={requiresSponsorship} onChange={setRequiresSponsorship} />
+          <F k="visaStatus" label="Visa status (if any)" placeholder="e.g. H-1B, OPT" />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employment &amp; education</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <F k="currentEmployer" label="Current employer" />
+          <F k="currentTitle" label="Current title" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <F k="highestEducation" label="Highest education" placeholder="Bachelor's, Master's…" />
+          <F k="school" label="School / University" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <F k="degree" label="Degree" />
+          <F k="major" label="Major" />
+          <F k="graduationYear" label="Graduation year" />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Logistics</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <YesNo label="Willing to relocate?" value={willingToRelocate} onChange={setWillingToRelocate} />
+          <F k="desiredSalary" label="Desired salary" placeholder="$120,000" />
+          <F k="noticePeriod" label="Notice period" placeholder="2 weeks" />
+          <F k="availabilityToStart" label="Availability to start" placeholder="Immediately" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <F k="howHeard" label="How did you hear about us? (default)" placeholder="LinkedIn" />
+          <F k="referralName" label="Referral name (if any)" />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Voluntary self-identification (EEO)</h3>
+        <p className="text-xs text-muted-foreground">Optional. Stored only if you provide it; never auto-submitted without your review.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <F k="gender" label="Gender" />
+          <F k="raceEthnicity" label="Race / ethnicity" />
+          <F k="veteranStatus" label="Veteran status" />
+          <F k="disabilityStatus" label="Disability status" />
+        </div>
+      </section>
+
+      <section className="flex items-start gap-3 rounded-lg border p-4">
+        <Checkbox id="consent" checked={consent} onCheckedChange={(c) => setConsent(c === true)} />
+        <Label htmlFor="consent" className="text-sm font-normal leading-snug">
+          I consent to JobPilot storing my details and using them to prepare and assist
+          job applications on my behalf.
+        </Label>
+      </section>
+
+      <div className="flex justify-end">
+        <Button onClick={handleSave} disabled={isSaving}>
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Save Application Details
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Experience (read-only view of parsed resume data) ───────────────────────
+
+function ExperienceTab({ profile }: { profile: UserProfile | null }) {
+  const experience = profile?.experience ?? [];
+  const education = profile?.education ?? [];
+  const projects = profile?.projects ?? [];
+
+  if (!experience.length && !education.length && !projects.length) {
+    return (
+      <div className="py-10 text-center">
+        <Briefcase className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+        <p className="text-sm font-medium mb-1">No experience on file yet</p>
+        <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+          Upload your resume on the Resume page — Claude extracts your work history,
+          education, and projects, and they appear here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {experience.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold">Work Experience</h3>
+          {experience.map((exp, i) => (
+            <div key={i} className="rounded-md border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">{exp.title || "—"}</p>
+                  <p className="text-xs text-muted-foreground">{exp.company}</p>
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {exp.startDate}{exp.endDate ? ` – ${exp.endDate}` : exp.isCurrent ? " – Present" : ""}
+                </span>
+              </div>
+              {exp.description && <p className="text-xs text-muted-foreground mt-1.5">{exp.description}</p>}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {education.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold">Education</h3>
+          {education.map((edu, i) => (
+            <div key={i} className="flex items-start justify-between rounded-md border p-3">
+              <div>
+                <p className="text-sm font-medium">{edu.degree}{edu.field ? `, ${edu.field}` : ""}</p>
+                <p className="text-xs text-muted-foreground">{edu.institution}</p>
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {edu.startYear}{edu.endYear ? ` – ${edu.endYear}` : ""}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {projects.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold">Projects</h3>
+          {projects.map((p, i) => (
+            <div key={i} className="rounded-md border p-3">
+              <p className="text-sm font-medium">{p.name}</p>
+              {p.description && <p className="text-xs text-muted-foreground mt-1">{p.description}</p>}
+              {p.technologies && p.technologies.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {p.technologies.map((t) => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        This data is extracted from your resume and used to tailor documents. Re-upload your
+        resume on the Resume page to refresh it.
+      </p>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function ProfileEditorPage() {
@@ -485,6 +749,10 @@ export function ProfileEditorPage() {
             <Target className="h-3.5 w-3.5" />
             Job Preferences
           </TabsTrigger>
+          <TabsTrigger value="application" className="gap-1.5">
+            <ClipboardList className="h-3.5 w-3.5" />
+            Application Details
+          </TabsTrigger>
           <TabsTrigger value="experience" className="gap-1.5">
             <Briefcase className="h-3.5 w-3.5" />
             Experience
@@ -527,21 +795,34 @@ export function ProfileEditorPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="application" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Application Details</CardTitle>
+              <CardDescription>
+                Standard answers reused on every application (Greenhouse, Lever, Ashby, Workable).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ApplicationDetailsTab
+                profile={data?.profile ?? null}
+                onSave={(d) => profileMutation.mutate(d)}
+                isSaving={profileMutation.isPending}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="experience" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Work Experience & Education</CardTitle>
+              <CardTitle className="text-base">Work Experience &amp; Education</CardTitle>
               <CardDescription>
-                Detailed experience context for document generation (Phase 3).
+                Extracted from your resume — used to tailor resumes and cover letters.
               </CardDescription>
             </CardHeader>
-            <CardContent className="py-10 text-center">
-              <Briefcase className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm font-medium mb-1">Coming in Phase 3</p>
-              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                Detailed work history and education will be used to tailor resumes and cover letters.
-                Parse your resume on the Resume page to pre-fill this section.
-              </p>
+            <CardContent>
+              <ExperienceTab profile={data?.profile ?? null} />
             </CardContent>
           </Card>
         </TabsContent>

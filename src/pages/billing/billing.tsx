@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   getSubscription,
   startCheckout,
@@ -108,6 +109,29 @@ export function BillingPage() {
               </Button>
             )}
           </div>
+
+          {sub?.usage && (
+            <div className="rounded-lg border p-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">Applications this month</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {sub.usage.applicationsUsed} / {sub.usage.applicationsPerMonth}
+                </span>
+              </div>
+              <Progress
+                value={Math.min(100, sub.usage.applicationsPerMonth > 0
+                  ? (sub.usage.applicationsUsed / sub.usage.applicationsPerMonth) * 100
+                  : 0)}
+                className="h-1.5"
+              />
+              <p className="text-xs text-muted-foreground">
+                {sub.usage.applicationsRemaining > 0
+                  ? `${sub.usage.applicationsRemaining} remaining on the ${sub.usage.planName} plan`
+                  : `Monthly limit reached on the ${sub.usage.planName} plan — upgrade for more.`}
+                {" "}Resets {new Date(sub.usage.periodResetsAt).toLocaleDateString()}.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -1,6 +1,6 @@
-import { detectPlatform, type Platform } from "../automation/platform-detector.js";
+import { detectPlatform, recognizeAts, type Platform } from "../automation/platform-detector.js";
 import { FIELD_MAPS, CAPTCHA_NOTE } from "../automation/field-maps.js";
-import { effectiveFullName, type CandidateProfile } from "../profile/candidate-profile.js";
+import { effectiveFullName, EEO_KEYS, type CandidateProfile } from "../profile/candidate-profile.js";
 
 // Build an ApplicationPackage — the contract between the engine and the browser
 // extension (ported from Job_applying_agent/prepare/application_packager.py +
@@ -99,6 +99,16 @@ export function buildApplicationPackage(input: BuildPackageInput): ApplicationPa
   }
 
   const warnings: string[] = [];
+  if (platform === "unsupported") {
+    // Name the recognized vendor so the user knows why we can't autofill and to
+    // apply manually, instead of a vague "unsupported" message.
+    const { vendor } = recognizeAts(input.applyUrl);
+    warnings.push(
+      vendor
+        ? `${vendor} applications aren't auto-fillable yet — open the apply link and submit manually. Your tailored resume and answers are ready to copy.`
+        : "This ATS isn't recognized for autofill — open the apply link and submit manually using your prepared resume and answers.",
+    );
+  }
   if (CAPTCHA_NOTE[platform]) warnings.push(CAPTCHA_NOTE[platform]!);
   warnings.push(
     "Resume auto-attaches from downloadUrl; if the site uses a custom uploader, " +
@@ -138,6 +148,9 @@ export function buildApplicationPackage(input: BuildPackageInput): ApplicationPa
 function profileSubset(p: CandidateProfile): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of PROFILE_KEYS) {
+    // Defensive: never expose EEO/demographic fields even if they were added to
+    // the allowlist by mistake (POLICY enforced here + in the allowlist above).
+    if (EEO_KEYS.includes(key)) continue;
     const v = p[key];
     if (v !== null && v !== undefined && v !== "") out[key] = v;
   }

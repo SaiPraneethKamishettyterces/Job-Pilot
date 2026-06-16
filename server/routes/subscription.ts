@@ -6,6 +6,7 @@ import { badRequest } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { config, hasStripe } from "../lib/config.js";
 import { activateSubscription, cancelSubscription, getSubscription } from "../services/billing/subscription-service.js";
+import { getUsageSummary } from "../services/billing/usage-limits.js";
 import {
   createCheckoutSession,
   createBillingPortalSession,
@@ -15,10 +16,11 @@ import {
 
 export const subscriptionRouter = Router();
 
-// GET /api/subscription — current user's subscription status + Stripe availability.
+// GET /api/subscription — current user's subscription status + plan usage +
+// Stripe availability.
 subscriptionRouter.get("/", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
-  const sub = await getSubscription(req.userId!);
-  res.json({ ...sub, stripeEnabled: hasStripe() });
+  const [sub, usage] = await Promise.all([getSubscription(req.userId!), getUsageSummary(req.userId!)]);
+  res.json({ ...sub, usage, stripeEnabled: hasStripe() });
 }));
 
 // POST /api/subscription/checkout — start a Stripe Checkout session.

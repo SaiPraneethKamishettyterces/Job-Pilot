@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { FileText, Upload, CheckCircle, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import type { OnboardingFormData } from "@/types";
 
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function StepResumeUpload({ onParsed }: Props) {
+  const { token } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "uploading" | "parsing" | "done" | "error">("idle");
 
@@ -27,6 +29,7 @@ export function StepResumeUpload({ onParsed }: Props) {
     try {
       const res = await fetch("/api/resumes/upload-parse", {
         method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: fd,
       });
 
@@ -51,7 +54,7 @@ export function StepResumeUpload({ onParsed }: Props) {
       setStatus("error");
       toast.error("Failed to parse resume. You can still continue manually.");
     }
-  }, [onParsed]);
+  }, [onParsed, token]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

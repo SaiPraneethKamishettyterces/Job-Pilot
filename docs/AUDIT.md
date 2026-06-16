@@ -62,18 +62,42 @@ productionization. Admin billing page references a *separate* GCP F&B product
 - [x] Onboarding "Application Details" step collects generic questions once.
 - [x] `Application.retryCount` for retry history.
 
-### P1 — before productionizing
-- [ ] Profile editor UI: expose/edit every new generic field (partial now).
-- [ ] Resume parse → auto-populate the new structured fields (currently only rawText).
-- [ ] Map company careers domains → ATS (widen autofill beyond greenhouse.io/lever.co).
-- [ ] Retry queue / scheduler for failed applications.
-- [ ] Plan-based application limits enforcement.
+### P1 — before productionizing (done)
+- [x] Profile editor UI: expose/edit every new generic field — new **Application Details**
+      tab; Experience tab now shows real parsed data (was a placeholder). Profile saves
+      are now partial (skip-undefined) so independent tabs don't clobber each other.
+- [x] Resume parse → auto-populate the new structured fields. `/upload-parse` now
+      persists a Resume row (rawText → tailoring; previously nothing was stored) and
+      non-destructively fills blank profile fields (skills/experience/education + derived
+      currentEmployer/title/school/degree/major/gradYear). Resume page rewired to live data.
+- [x] Map company careers domains → ATS. `recognizeAts()` names known-but-unsupported
+      vendors (Workday/SmartRecruiters/iCIMS/…) so the package tells the user to apply
+      manually; careers-domain map resolves typed URLs/domains (e.g. `stripe.com`) to a board.
+- [x] Retry queue / scheduler. `retry-service` + `retry-worker` (interval, config-gated)
+      + `POST /applications/:id/retry` + UI retry action on failed rows.
+- [x] Plan-based application limits. `usage-limits` service; pipeline shortlist capped by
+      `min(applicationsPerDay, remaining monthly plan allowance)`; usage surfaced on the
+      subscription endpoint + a usage bar on the Billing page.
 
-### P2 — important improvements
-- [ ] Decide on the admin billing surface (separate GCP product) — keep/remove.
-- [ ] EEO autofill policy review (stored, currently excluded from auto-fill by design).
-- [ ] Code-split the 779 kB client bundle.
+### P2 — important improvements (done)
+- [x] Admin billing surface — **decision: keep** the AI-cost + user-billing dashboard
+      (real data from `AIUsageEvent`); **removed** the GCP/BigQuery "backlog" placeholders
+      (out-of-scope data-platform product per CLAUDE.md). Dropped the `cloud` API field + UI.
+- [x] EEO autofill policy — made explicit: `EEO_KEYS` constant + defensive exclusion in the
+      packager + a test asserting EEO values never appear anywhere in the package.
+- [x] Code-split the client bundle — routes are `React.lazy` + `Suspense`; Vite `manualChunks`
+      splits vendor/charts/radix. Main entry chunk dropped from ~779 kB to ~41 kB.
 
-### P3 — nice to have
-- [ ] Email notifications, audit-log viewer UI, data export/delete (privacy),
-      consent/disclaimer screen before automation.
+### P3 — nice to have (done)
+- [x] Email notifications — provider-agnostic `email-service` (log transport, no keys
+      needed); run-completion notification fires from the pipeline.
+- [x] Audit-log viewer — `GET /api/activity` + **Activity** page (application + subscription
+      event timeline).
+- [x] Data export/delete — `GET /api/account/export` (full JSON, passwordHash redacted) +
+      `DELETE /api/account` (cascade); wired into Settings (Privacy & Data + Danger Zone).
+- [x] Consent/disclaimer before automation — `/submit` is gated on
+      `consentToDataProcessing`; Review page shows a disclaimer and surfaces the gate message.
+
+### Also fixed this session
+- Express 5 production SPA fallback used a bare `*` (would crash boot in prod) → `/*splat`.
+- Onboarding resume upload posted without the auth token (would 401) → now attaches it.

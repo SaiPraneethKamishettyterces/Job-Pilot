@@ -59,6 +59,19 @@ export interface CandidateProfile {
   customAnswers: Record<string, string>;
 }
 
+// EEO / voluntary self-identification fields. POLICY: these are stored (so the
+// user can review/provide them) but are NEVER auto-filled into application forms
+// and NEVER sent to the AI. They are excluded from the autofill package's
+// standard fields and profile subset, and from Q&A grounding. Demographic
+// questions on a form are always escalated to the user. See
+// application-package.ts (allowlist) and qa-generator.ts (SENSITIVE_PATTERNS).
+export const EEO_KEYS: ReadonlyArray<keyof CandidateProfile> = [
+  "gender",
+  "raceEthnicity",
+  "veteranStatus",
+  "disabilityStatus",
+];
+
 function splitName(full: string | null | undefined): { first: string | null; last: string | null } {
   if (!full?.trim()) return { first: null, last: null };
   const parts = full.trim().split(/\s+/);

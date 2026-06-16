@@ -155,7 +155,57 @@ const CURATED: Record<string, BoardRef> = {
   cloudflare: { ats: "greenhouse", token: "cloudflare" },
   netflix: { ats: "lever", token: "netflix" },
   plaid: { ats: "greenhouse", token: "plaid" },
+  // Additional well-known boards.
+  reddit: { ats: "greenhouse", token: "reddit" },
+  instacart: { ats: "greenhouse", token: "instacart" },
+  brex: { ats: "greenhouse", token: "brex" },
+  ramp: { ats: "greenhouse", token: "ramp" },
+  notion: { ats: "greenhouse", token: "notion" },
+  retool: { ats: "greenhouse", token: "retool" },
+  scaleai: { ats: "lever", token: "scaleai" },
+  ramppayments: { ats: "greenhouse", token: "ramp" },
+  benchling: { ats: "greenhouse", token: "benchling" },
+  affirm: { ats: "greenhouse", token: "affirm" },
+  doordash: { ats: "greenhouse", token: "doordash" },
+  asana: { ats: "greenhouse", token: "asana" },
 };
+
+// Map common company/careers HOSTNAMES to a board, so a user who types a URL or
+// domain (e.g. "stripe.com", "https://careers.stripe.com/...") still resolves to
+// a real board instead of falling through to the slug guess.
+const DOMAIN_TO_BOARD: Record<string, BoardRef> = {
+  "stripe.com": { ats: "greenhouse", token: "stripe" },
+  "figma.com": { ats: "greenhouse", token: "figma" },
+  "databricks.com": { ats: "greenhouse", token: "databricks" },
+  "coinbase.com": { ats: "greenhouse", token: "coinbase" },
+  "gitlab.com": { ats: "greenhouse", token: "gitlab" },
+  "cloudflare.com": { ats: "greenhouse", token: "cloudflare" },
+  "netflix.com": { ats: "lever", token: "netflix" },
+  "plaid.com": { ats: "greenhouse", token: "plaid" },
+  "reddit.com": { ats: "greenhouse", token: "reddit" },
+  "notion.so": { ats: "greenhouse", token: "notion" },
+  "doordash.com": { ats: "greenhouse", token: "doordash" },
+  "asana.com": { ats: "greenhouse", token: "asana" },
+};
+
+// Extract a bare hostname from a free-text entry that may be a URL, a domain, or
+// neither. Returns null when the entry doesn't look like a domain/URL.
+function extractHost(entry: string): string | null {
+  const trimmed = entry.trim().toLowerCase();
+  if (!trimmed) return null;
+  let host: string | null = null;
+  if (/^https?:\/\//.test(trimmed)) {
+    try {
+      host = new URL(trimmed).hostname;
+    } catch {
+      host = null;
+    }
+  } else if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(trimmed)) {
+    host = trimmed;
+  }
+  if (!host) return null;
+  return host.replace(/^www\./, "").replace(/^(careers|jobs|boards|apply|job-boards)\./, "");
+}
 
 // Default boards used when the user has no target companies (or none resolve),
 // so an ingestion run still returns real jobs in the base version.
@@ -187,7 +237,15 @@ export function resolveBoards(targetCompanies: string[]): BoardRef[] {
   };
 
   for (const company of targetCompanies) {
-    const slug = slugify(company);
+    // If the entry is a URL/domain, resolve it via the careers-domain map first.
+    const host = extractHost(company);
+    if (host && DOMAIN_TO_BOARD[host]) {
+      add(DOMAIN_TO_BOARD[host]);
+      continue;
+    }
+
+    // For an unmapped host, use its first label (acme.com → "acme") as the slug.
+    const slug = slugify(host ? host.split(".")[0]! : company);
     if (!slug) continue;
     if (CURATED[slug]) {
       add(CURATED[slug]);
