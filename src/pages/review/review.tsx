@@ -283,6 +283,22 @@ export function ReviewPage() {
                       I've submitted it
                     </Button>
                   </div>
+
+                  {/* Copy/paste detail sheet — every value we have for this form,
+                      so portals like Workday are mostly copying, not retyping. */}
+                  {pkg?.standardFields?.some((f) => f.value) && (
+                    <div className="rounded-md border bg-background p-3">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Your details (copy into the form)</p>
+                      <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                        {pkg.standardFields.filter((f) => f.value).map((f) => (
+                          <div key={f.key} className="flex items-baseline justify-between gap-3 text-sm">
+                            <dt className="text-muted-foreground shrink-0">{f.label}</dt>
+                            <dd className="font-medium text-right break-all">{f.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </div>
+                  )}
                 </div>
               )}
 

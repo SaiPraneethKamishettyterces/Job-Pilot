@@ -111,7 +111,10 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
       });
     }
 
-    const shortlist = selectTopMatches(scored, cap, alreadyApplied);
+    // Diversity: don't let one employer dominate the day's shortlist. At most
+    // ~1/3 of the cap (min 2) from a single company, then fill by next-best score.
+    const maxPerCompany = Math.max(2, Math.ceil(cap / 3));
+    const shortlist = selectTopMatches(scored, cap, { alreadyAppliedJobIds: alreadyApplied, maxPerCompany });
     const shortlisted = shortlist.length;
 
     await prisma.applicationRun.update({

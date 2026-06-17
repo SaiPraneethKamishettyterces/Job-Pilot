@@ -1,5 +1,5 @@
-import { detectPlatform, recognizeAts, type Platform } from "../automation/platform-detector.js";
-import { FIELD_MAPS, CAPTCHA_NOTE } from "../automation/field-maps.js";
+import { detectPlatform, recognizeAts, vendorGuidance, type Platform } from "../automation/platform-detector.js";
+import { FIELD_MAPS, CAPTCHA_NOTE, COMMON_FIELDS_FALLBACK } from "../automation/field-maps.js";
 import { effectiveFullName, EEO_KEYS, type CandidateProfile } from "../profile/candidate-profile.js";
 
 // Build an ApplicationPackage — the contract between the engine and the browser
@@ -79,7 +79,10 @@ export interface BuildPackageInput {
 
 export function buildApplicationPackage(input: BuildPackageInput): ApplicationPackage {
   const platform = detectPlatform(input.applyUrl);
-  const specs = FIELD_MAPS[platform] ?? [];
+  // Supported platforms get selector-driven autofill; recognized-but-unsupported
+  // portals (Workday, iCIMS, …) still get a full copy/paste detail sheet so the
+  // manual apply is mostly copying, not retyping.
+  const specs = FIELD_MAPS[platform] ?? COMMON_FIELDS_FALLBACK;
 
   const standardFields: StandardField[] = [];
   const missingRequired: string[] = [];
@@ -100,13 +103,13 @@ export function buildApplicationPackage(input: BuildPackageInput): ApplicationPa
 
   const warnings: string[] = [];
   if (platform === "unsupported") {
-    // Name the recognized vendor so the user knows why we can't autofill and to
-    // apply manually, instead of a vague "unsupported" message.
+    // Name the recognized vendor + give vendor-specific "how to apply" guidance,
+    // and surface the full detail sheet (standardFields) for copy/paste.
     const { vendor } = recognizeAts(input.applyUrl);
     warnings.push(
       vendor
-        ? `${vendor} applications aren't auto-fillable yet — open the apply link and submit manually. Your tailored resume and answers are ready to copy.`
-        : "This ATS isn't recognized for autofill — open the apply link and submit manually using your prepared resume and answers.",
+        ? `${vendor} isn't auto-fillable yet — apply manually using the details below. ${vendorGuidance(vendor)}`
+        : `This ATS isn't recognized for autofill — apply manually using the details below. ${vendorGuidance(null)}`,
     );
   }
   if (CAPTCHA_NOTE[platform]) warnings.push(CAPTCHA_NOTE[platform]!);

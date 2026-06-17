@@ -75,3 +75,30 @@ const VENDOR_LABEL: Partial<Record<Platform, string>> = {
   ashby: "Ashby",
   workable: "Workable",
 };
+
+// Short, vendor-specific "how to apply" guidance for recognized-but-unsupported
+// portals, so the manual handoff is as low-effort as possible. Keyed by the
+// vendor name returned by recognizeAts(). Falls back to a generic tip.
+const VENDOR_GUIDANCE: Record<string, string> = {
+  Workday:
+    "Workday needs an account: click Apply → 'Create Account' (or Sign In), then use 'Autofill with Resume' and paste from the details below. Workday carries data between its job sites, so you only set this up once per company.",
+  iCIMS:
+    "iCIMS usually lets you 'Apply with LinkedIn' or upload your resume to prefill — do that first, then fill the rest from the details below.",
+  SmartRecruiters:
+    "SmartRecruiters supports resume upload to prefill and social sign-in — use those, then complete remaining fields from the details below.",
+  Jobvite: "Upload your resume to prefill where possible, then complete the form from the details below.",
+  BambooHR: "Short form — fill it from the details below; attach your tailored resume.",
+  Recruitee: "Upload your resume to prefill, then complete remaining fields from the details below.",
+  Breezy: "Upload your resume to prefill, then complete remaining fields from the details below.",
+  Taleo:
+    "Taleo requires creating an account. Sign up, use resume upload to prefill, then complete the form from the details below.",
+  SuccessFactors:
+    "SAP SuccessFactors requires an account. Register, upload your resume to prefill, then complete the rest from the details below.",
+  Teamtailor: "Upload your resume to prefill, then complete remaining fields from the details below.",
+};
+
+/** Vendor-specific manual-apply guidance for a recognized portal (or a generic tip). */
+export function vendorGuidance(vendor: string | null): string {
+  if (vendor && VENDOR_GUIDANCE[vendor]) return VENDOR_GUIDANCE[vendor]!;
+  return "Open the application link, sign in or create an account if required, attach your tailored resume, and fill the form using the prepared details below.";
+}

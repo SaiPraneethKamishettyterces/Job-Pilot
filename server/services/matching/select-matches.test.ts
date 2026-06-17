@@ -1,8 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { selectTopMatches, type ScoredJob } from "./select-matches.js";
 
-function job(id: string, score: number, decision: ScoredJob["decision"] = "SHORTLIST"): ScoredJob {
-  return { jobId: id, score, decision, company: `Co-${id}`, title: `Role ${id}`, jobUrl: null, atsPlatform: null };
+function job(
+  id: string,
+  score: number,
+  decision: ScoredJob["decision"] = "SHORTLIST",
+  company = `Co-${id}`,
+): ScoredJob {
+  return { jobId: id, score, decision, company, title: `Role ${id}`, jobUrl: null, atsPlatform: null };
 }
 
 describe("selectTopMatches", () => {
@@ -30,7 +35,7 @@ describe("selectTopMatches", () => {
 
   it("excludes jobs the user already applied to", () => {
     const scored = [job("a", 95), job("b", 90), job("c", 85)];
-    const top = selectTopMatches(scored, 3, new Set(["a"]));
+    const top = selectTopMatches(scored, 3, { alreadyAppliedJobIds: new Set(["a"]) });
     expect(top.map((j) => j.jobId)).toEqual(["b", "c"]);
   });
 
@@ -39,5 +44,30 @@ describe("selectTopMatches", () => {
     const before = scored.map((j) => j.jobId);
     selectTopMatches(scored, 2);
     expect(scored.map((j) => j.jobId)).toEqual(before);
+  });
+
+  it("caps per-company in the diverse pass, then fills the quota by score", () => {
+    // 4 jobs at Acme (high scores) + 1 at Globex. cap=3, maxPerCompany=2.
+    const scored = [
+      job("a1", 99, "SHORTLIST", "Acme"),
+      job("a2", 98, "SHORTLIST", "Acme"),
+      job("a3", 97, "SHORTLIST", "Acme"),
+      job("a4", 96, "SHORTLIST", "Acme"),
+      job("g1", 50, "SHORTLIST", "Globex"),
+    ];
+    const top = selectTopMatches(scored, 3, { maxPerCompany: 2 });
+    // 2 Acme (top scores) + Globex fills the 3rd slot for diversity.
+    expect(top.filter((j) => j.company === "Acme")).toHaveLength(2);
+    expect(top.map((j) => j.jobId)).toContain("g1");
+  });
+
+  it("fills remaining slots from the same company when no diversity is available", () => {
+    const scored = [
+      job("a1", 99, "SHORTLIST", "Acme"),
+      job("a2", 98, "SHORTLIST", "Acme"),
+      job("a3", 97, "SHORTLIST", "Acme"),
+    ];
+    // Only one company exists → cap must still be filled despite maxPerCompany.
+    expect(selectTopMatches(scored, 3, { maxPerCompany: 2 })).toHaveLength(3);
   });
 });

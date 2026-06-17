@@ -128,11 +128,76 @@ const LEVER_FIELDS: FieldSpec[] = [
   },
 ];
 
+// Common fields most ATS forms ask for, with generic (attribute-contains)
+// selectors. Appended to every platform map for keys the platform-specific map
+// doesn't already define, so we prefill as much as the user's data allows.
+// (The packager only emits a field when it has a value or is required, so adding
+// these never bloats the package.) NOTE: no EEO/demographic fields here — policy.
+const COMMON_FIELDS: FieldSpec[] = [
+  { key: "address_line1", label: "Address", getter: (u) => u.addressLine1,
+    selectors: ["input[name*='address' i]:not([name*='2' i])", "input[autocomplete='address-line1']", "input[aria-label*='Address' i]"] },
+  { key: "address_line2", label: "Address line 2", getter: (u) => u.addressLine2,
+    selectors: ["input[name*='address2' i]", "input[name*='address_2' i]", "input[autocomplete='address-line2']"] },
+  { key: "city", label: "City", getter: (u) => u.city ?? u.location,
+    selectors: ["input[name*='city' i]", "input[autocomplete='address-level2']", "input[aria-label*='City' i]"] },
+  { key: "state", label: "State / Region", getter: (u) => u.state,
+    selectors: ["input[name*='state' i]", "select[name*='state' i]", "input[autocomplete='address-level1']", "input[aria-label*='State' i]"] },
+  { key: "zip", label: "Postal code", getter: (u) => u.zipCode,
+    selectors: ["input[name*='zip' i]", "input[name*='postal' i]", "input[autocomplete='postal-code']"] },
+  { key: "country", label: "Country", getter: (u) => u.country,
+    selectors: ["input[name*='country' i]", "select[name*='country' i]", "input[autocomplete='country-name']"] },
+  { key: "current_company", label: "Current company", getter: (u) => u.currentCompany,
+    selectors: ["input[name*='company' i]", "input[name*='employer' i]", "input[aria-label*='Company' i]"] },
+  { key: "current_title", label: "Current title", getter: (u) => u.currentTitle,
+    selectors: ["input[name*='current_title' i]", "input[name*='position' i]", "input[aria-label*='Current title' i]"] },
+  { key: "years_experience", label: "Years of experience", getter: (u) => (u.yearsOfExperience != null ? String(u.yearsOfExperience) : null),
+    selectors: ["input[name*='experience' i]", "input[aria-label*='experience' i]"] },
+  { key: "desired_salary", label: "Desired salary", getter: (u) => u.desiredSalary,
+    selectors: ["input[name*='salary' i]", "input[name*='compensation' i]", "input[aria-label*='salary' i]"] },
+  { key: "notice_period", label: "Notice period", getter: (u) => u.noticePeriod,
+    selectors: ["input[name*='notice' i]", "input[aria-label*='notice' i]"] },
+  { key: "start_date", label: "Availability / start date", getter: (u) => u.availabilityToStart,
+    selectors: ["input[name*='availab' i]", "input[name*='start_date' i]", "input[aria-label*='start date' i]"] },
+  { key: "school", label: "School", getter: (u) => u.schoolName,
+    selectors: ["input[name*='school' i]", "input[name*='university' i]", "input[aria-label*='School' i]"] },
+  { key: "degree", label: "Degree", getter: (u) => u.highestDegree,
+    selectors: ["input[name*='degree' i]", "select[name*='degree' i]", "input[aria-label*='Degree' i]"] },
+  { key: "major", label: "Field of study", getter: (u) => u.major,
+    selectors: ["input[name*='major' i]", "input[name*='discipline' i]", "input[aria-label*='Field of study' i]"] },
+  { key: "graduation_year", label: "Graduation year", getter: (u) => u.graduationYear,
+    selectors: ["input[name*='graduat' i]", "input[aria-label*='Graduation' i]"] },
+  { key: "github", label: "GitHub", getter: (u) => u.githubUrl,
+    selectors: ["input[name*='github' i]", "input[aria-label*='GitHub' i]"] },
+  { key: "portfolio", label: "Portfolio", getter: (u) => u.portfolioUrl,
+    selectors: ["input[name*='portfolio' i]", "input[aria-label*='Portfolio' i]"] },
+  { key: "website", label: "Website", getter: (u) => u.websiteUrl,
+    selectors: ["input[name*='website' i]", "input[aria-label*='Website' i]"] },
+];
+
+// Append common fields for any key a platform map doesn't already cover. The
+// platform-specific spec (more precise selectors) always wins on key collision.
+function withCommon(specific: FieldSpec[]): FieldSpec[] {
+  const keys = new Set(specific.map((f) => f.key));
+  return [...specific, ...COMMON_FIELDS.filter((f) => !keys.has(f.key))];
+}
+
+// Fallback for recognized-but-unsupported portals (Workday, iCIMS, …): there are
+// no reliable selectors to autofill, but we still surface every value the user
+// has so they can copy it into the portal — turning a manual apply into mostly
+// copy/paste. Identity fields the platform maps cover are prepended here.
+export const COMMON_FIELDS_FALLBACK: FieldSpec[] = [
+  { key: "full_name", label: "Full name", getter: (u) => effectiveFullName(u), selectors: [] },
+  { key: "email", label: "Email", getter: (u) => u.email, selectors: [] },
+  { key: "phone", label: "Phone", getter: (u) => u.phone, selectors: [] },
+  { key: "linkedin", label: "LinkedIn", getter: (u) => u.linkedinUrl, selectors: [] },
+  ...COMMON_FIELDS.map((f) => ({ ...f, selectors: [] })),
+];
+
 export const FIELD_MAPS: Partial<Record<Platform, FieldSpec[]>> = {
-  greenhouse: GREENHOUSE_FIELDS,
-  lever: LEVER_FIELDS,
-  ashby: ASHBY_FIELDS,
-  workable: WORKABLE_FIELDS,
+  greenhouse: withCommon(GREENHOUSE_FIELDS),
+  lever: withCommon(LEVER_FIELDS),
+  ashby: withCommon(ASHBY_FIELDS),
+  workable: withCommon(WORKABLE_FIELDS),
 };
 
 // Per-platform CAPTCHA note surfaced to the user (they solve it before submit).

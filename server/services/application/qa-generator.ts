@@ -118,6 +118,7 @@ async function fromSemantic(question: string, p: CandidateProfile): Promise<Answ
 function fromProfile(question: string, p: CandidateProfile): AnswerResult | null {
   const q = question.toLowerCase();
   const mapping: Array<[RegExp, string | null]> = [
+    [/preferred name|nickname|what.*go by/, p.preferredName],
     [/full name|legal name|your name/, effectiveFullName(p)],
     [/first name/, p.firstName],
     [/last name|surname|family name/, p.lastName],
@@ -134,12 +135,21 @@ function fromProfile(question: string, p: CandidateProfile): AnswerResult | null
     [/school|university|college/, p.schoolName],
     [/major|field of study/, p.major],
     [/graduat/, p.graduationYear],
-    [/notice period/, p.noticePeriod],
+    [/notice period|notice|how soon.*resign/, p.noticePeriod],
+    [/(available|availability|start date|when can you start|earliest start)/, p.availabilityToStart],
     [/work authoriz|authorized to work|right to work/, p.workAuthorization],
     [/visa status/, p.visaStatus],
-    [/desired salary|salary expect|expected (salary|compensation)/, p.desiredSalary],
-    [/relocat/, yn(p.willingToRelocate)],
-    [/sponsor/, yn(p.requiresSponsorship)],
+    [/(require|need).*sponsor|sponsor.*(require|need|now or in the future)|sponsor/, yn(p.requiresSponsorship)],
+    [/desired salary|salary expect|expected (salary|compensation)|compensation expect/, p.desiredSalary],
+    [/relocat|willing to move/, yn(p.willingToRelocate)],
+    [/how did you hear|hear about (us|this|the)|referral source/, p.howHeard ?? p.referralSource],
+    [/who referred|referr(ed|al) (by|name)|referrer/, p.referralName],
+    [/address line ?1|street address|^address|mailing address/, p.addressLine1],
+    [/address line ?2|apt|suite|unit/, p.addressLine2],
+    [/city|town/, p.city ?? p.location],
+    [/state|province|region/, p.state],
+    [/zip|postal code/, p.zipCode],
+    [/country/, p.country],
     [/location|where.*located|based/, p.location],
   ];
   for (const [pattern, value] of mapping) {
