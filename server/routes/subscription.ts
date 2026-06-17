@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import { config, hasStripe } from "../lib/config.js";
 import { activateSubscription, cancelSubscription, getSubscription } from "../services/billing/subscription-service.js";
 import { getUsageSummary } from "../services/billing/usage-limits.js";
+import { ensurePlans, PLAN_CATALOG } from "../services/billing/plan-catalog.js";
 import {
   createCheckoutSession,
   createBillingPortalSession,
@@ -21,6 +22,18 @@ export const subscriptionRouter = Router();
 subscriptionRouter.get("/", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
   const [sub, usage] = await Promise.all([getSubscription(req.userId!), getUsageSummary(req.userId!)]);
   res.json({ ...sub, usage, stripeEnabled: hasStripe() });
+}));
+
+// GET /api/subscription/plans — the public tier catalog for the pricing UI.
+subscriptionRouter.get("/plans", requireAuth, asyncHandler(async (_req, res) => {
+  await ensurePlans();
+  const plans = PLAN_CATALOG.map((p) => ({
+    slug: p.slug, name: p.name, priceMonthly: p.priceMonthly,
+    applicationsPerDay: p.applicationsPerDay, applicationsPerMonth: p.applicationsPerMonth,
+    automationEnabled: p.automationEnabled, analyticsEnabled: p.analyticsEnabled,
+    highlight: Boolean(p.highlight), isPaid: p.priceMonthly > 0,
+  }));
+  res.json({ plans });
 }));
 
 // POST /api/subscription/checkout — start a Stripe Checkout session.
@@ -47,6 +60,7 @@ subscriptionRouter.post("/activate", requireAuth, asyncHandler(async (req: AuthR
   const { subscription, event, run } = await activateSubscription(req.userId!, {
     paymentProvider: "test",
     eventType: "dev_manual_activation",
+    planSlug: req.body?.plan ? String(req.body.plan) : "starter",
     amountPaid: 0,
     currency: "USD",
     rawEvent: { source: "dev_activate_endpoint" },
@@ -92,6 +106,7 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
     const { run } = await activateSubscription(resolved.userId, {
       paymentProvider: "stripe",
       eventType: resolved.eventType,
+      planSlug: resolved.planSlug,
       planName: resolved.planSlug,
       amountPaid: resolved.amount,
       currency: resolved.currency,

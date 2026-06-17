@@ -9,22 +9,7 @@ import { prisma } from "../../lib/db.js";
 import { logger } from "../../lib/logger.js";
 import { createIngestionRun } from "../ingestion/ingestion-orchestrator.js";
 import { triggerFullPipeline } from "../../workers/application-pipeline.js";
-
-const DEFAULT_PLAN = {
-  slug: "starter-test",
-  name: "Starter (Test)",
-  priceMonthly: 0,
-  applicationsPerMonth: 100,
-  tailoringsPerMonth: 100,
-};
-
-async function ensureDefaultPlan() {
-  return prisma.plan.upsert({
-    where: { slug: DEFAULT_PLAN.slug },
-    create: { ...DEFAULT_PLAN, automationEnabled: true, analyticsEnabled: true },
-    update: {},
-  });
-}
+import { resolvePlanRecord } from "./plan-catalog.js";
 
 /**
  * Initialize a user's data structures so the pipeline can run. In Job-Pilot's
@@ -66,6 +51,7 @@ export async function cancelSubscription(userId: string) {
 export type ActivateOptions = {
   paymentProvider?: "stripe" | "manual" | "test";
   eventType?: string;
+  planSlug?: string;
   planName?: string;
   amountPaid?: number;
   currency?: string;
@@ -85,8 +71,9 @@ export async function activateSubscription(userId: string, opts: ActivateOptions
   const existing = await prisma.subscription.findUnique({ where: { userId } });
   const oldStatus = existing?.status ?? "inactive";
 
-  // 1. Flip subscription to active (create one if absent).
-  const plan = await ensureDefaultPlan();
+  // 1. Flip subscription to active (create one if absent). The tier is chosen by
+  //    planSlug (from Stripe checkout metadata / dev activation); unknown → free.
+  const plan = await resolvePlanRecord(opts.planSlug ?? opts.planName);
   const now = new Date();
   const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const subscription = await prisma.subscription.upsert({

@@ -58,11 +58,14 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
   try {
     const snapshot = await buildProfileSnapshot(userId);
     const prefs = await prisma.userPreference.findUnique({ where: { userId } });
-    // Cap shortlist by BOTH the user's per-run/day preference AND the remaining
-    // monthly allowance from their plan. The plan limit is the hard ceiling.
-    const dailyCap = Math.max(1, prefs?.applicationsPerDay ?? 10);
-    const monthlyRemaining = await remainingApplications(userId);
     const planLimits = await getPlanLimits(userId);
+    // Daily cap comes from the active plan tier (30/50/75/day); the user may set a
+    // LOWER personal cap, but never exceed the plan. Monthly allowance is the hard
+    // ceiling on top of that.
+    const planDailyCap = Math.max(1, planLimits.applicationsPerDay);
+    const userDailyCap = prefs?.applicationsPerDay ?? planDailyCap;
+    const dailyCap = Math.max(1, Math.min(planDailyCap, userDailyCap));
+    const monthlyRemaining = await remainingApplications(userId);
     const cap = Math.max(0, Math.min(dailyCap, monthlyRemaining));
     if (monthlyRemaining <= 0) {
       logger.info(

@@ -74,8 +74,21 @@ export type UserBillingRow = {
 
 export type UserBillingResponse = { users: UserBillingRow[]; total: number };
 
+export type Financials = {
+  revenue: { mrr: number; arr: number; activeSubscribers: number };
+  byPlan: { plan: string; priceMonthly: number; subscribers: number; mrr: number }[];
+  costs: { aiThisMonth: number; aiAllTime: number; infraMonthly: number; totalThisMonth: number };
+  margin: { grossProfit: number; marginPct: number };
+  perUser: { arpu: number; aiCostPerActiveUser: number; totalCostPerActiveUser: number };
+};
+
 export async function getCompanyBilling(): Promise<CompanyBillingMetrics> {
   const { data } = await api.get<CompanyBillingMetrics>("/api/billing/company");
+  return data;
+}
+
+export async function getFinancials(): Promise<Financials> {
+  const { data } = await api.get<Financials>("/api/billing/financials");
   return data;
 }
 

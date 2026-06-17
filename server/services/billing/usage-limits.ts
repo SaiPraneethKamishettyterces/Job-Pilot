@@ -7,13 +7,15 @@ import { prisma } from "../../lib/db.js";
 
 const FREE_LIMITS = {
   planName: "Free",
-  applicationsPerMonth: 5,
-  tailoringsPerMonth: 5,
+  applicationsPerDay: 3,
+  applicationsPerMonth: 15,
+  tailoringsPerMonth: 15,
   automationEnabled: false,
 };
 
 export interface PlanLimits {
   planName: string;
+  applicationsPerDay: number;
   applicationsPerMonth: number;
   tailoringsPerMonth: number;
   automationEnabled: boolean;
@@ -42,6 +44,7 @@ export async function getPlanLimits(userId: string): Promise<PlanLimits> {
   if (!sub || sub.status !== "active" || !sub.plan) return { ...FREE_LIMITS };
   return {
     planName: sub.plan.name,
+    applicationsPerDay: sub.plan.applicationsPerDay,
     applicationsPerMonth: sub.plan.applicationsPerMonth,
     tailoringsPerMonth: sub.plan.tailoringsPerMonth,
     automationEnabled: sub.plan.automationEnabled,

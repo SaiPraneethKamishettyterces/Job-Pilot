@@ -9,35 +9,28 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   getSubscription,
+  getPlans,
   startCheckout,
   openBillingPortal,
   activateSubscription,
+  type PlanTier,
 } from "@/services/api";
 
-const PLANS = [
-  {
-    slug: "free", name: "Free", price: "$0", period: "forever",
-    description: "Get started with manual uploads",
-    features: ["5 manual job uploads", "Resume parsing", "Basic match scoring", "Cover letter drafts"],
-  },
-  {
-    slug: "starter", name: "Starter", price: "$29", period: "per month",
-    description: "Daily discovery + document generation",
-    features: ["100 applications/month", "Daily job discovery", "Tailored resumes + cover letters", "Application tracker", "Email support"],
-    highlighted: true,
-  },
-  {
-    slug: "pro", name: "Pro", price: "$79", period: "per month",
-    description: "Assisted automation + analytics",
-    features: ["500 applications/month", "Assisted ATS automation", "Cold email generator", "Analytics dashboard", "Priority support"],
-  },
-];
+// Feature bullets per tier (presentation only; caps/prices come from the API).
+const PLAN_FEATURES: Record<string, string[]> = {
+  free: ["Try the full flow", "Resume parsing + match scoring", "Tailored resume + cover letter drafts"],
+  starter: ["Daily job discovery", "Tailored resumes + cover letters", "Assisted ATS apply", "Application tracker"],
+  pro: ["Everything in Starter", "Assisted automation", "Cold email generator", "Analytics dashboard", "Priority support"],
+  max: ["Everything in Pro", "Highest daily volume", "Best for an active search"],
+};
 
 export function BillingPage() {
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
 
   const { data: sub, isLoading } = useQuery({ queryKey: ["subscription"], queryFn: getSubscription });
+  const { data: plansData } = useQuery({ queryKey: ["plans"], queryFn: getPlans });
+  const plans: PlanTier[] = plansData?.plans ?? [];
 
   // Handle Stripe redirect return (?status=success|cancelled).
   useEffect(() => {
@@ -58,7 +51,7 @@ export function BillingPage() {
     onError: () => toast.error("Could not start checkout"),
   });
   const activateTest = useMutation({
-    mutationFn: () => activateSubscription(),
+    mutationFn: (plan: string) => activateSubscription(plan),
     onSuccess: () => { toast.success("Activated (test mode) — pipeline started"); qc.invalidateQueries({ queryKey: ["subscription"] }); },
     onError: () => toast.error("Activation failed"),
   });
@@ -74,7 +67,7 @@ export function BillingPage() {
   function selectPlan(slug: string) {
     if (slug === "free") return;
     if (stripeEnabled) checkout.mutate(slug);
-    else activateTest.mutate(); // test mode: no Stripe keys configured
+    else activateTest.mutate(slug); // test mode: no Stripe keys configured
   }
 
   return (
@@ -138,27 +131,31 @@ export function BillingPage() {
       {/* Plans */}
       <div>
         <h3 className="text-base font-semibold mb-4">Plans</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {PLANS.map((plan) => {
-            const current = isActive && (plan.slug === "starter" || (sub?.planName ?? "").toLowerCase().includes(plan.slug));
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {plans.map((plan) => {
+            const current = isActive && (sub?.planName ?? "").toLowerCase() === plan.name.toLowerCase();
             const pending = checkout.isPending || activateTest.isPending;
+            const features = PLAN_FEATURES[plan.slug] ?? [];
             return (
-              <Card key={plan.slug} className={plan.highlighted ? "border-primary ring-1 ring-primary" : ""}>
+              <Card key={plan.slug} className={plan.highlight ? "border-primary ring-1 ring-primary" : ""}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">{plan.name}</CardTitle>
                     {current && <Badge variant="info">Current</Badge>}
-                    {plan.highlighted && !current && <Badge variant="default"><Zap className="h-3 w-3 mr-1" />Popular</Badge>}
+                    {plan.highlight && !current && <Badge variant="default"><Zap className="h-3 w-3 mr-1" />Popular</Badge>}
                   </div>
                   <div className="flex items-end gap-1">
-                    <span className="text-3xl font-bold">{plan.price}</span>
-                    <span className="text-sm text-muted-foreground pb-1">{plan.period}</span>
+                    <span className="text-3xl font-bold">${plan.priceMonthly}</span>
+                    <span className="text-sm text-muted-foreground pb-1">{plan.isPaid ? "per month" : "forever"}</span>
                   </div>
-                  <CardDescription>{plan.description}</CardDescription>
+                  <CardDescription>
+                    <span className="font-semibold text-foreground">{plan.applicationsPerDay} applications/day</span>
+                    {" "}· up to {plan.applicationsPerMonth.toLocaleString()}/month
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <ul className="space-y-2">
-                    {plan.features.map((f) => (
+                    {features.map((f) => (
                       <li key={f} className="flex items-center gap-2 text-sm">
                         <Check className="h-4 w-4 text-success shrink-0" />{f}
                       </li>
@@ -166,12 +163,12 @@ export function BillingPage() {
                   </ul>
                   <Button
                     className="w-full"
-                    variant={plan.slug === "free" || current ? "outline" : "default"}
-                    disabled={plan.slug === "free" || current || pending}
+                    variant={!plan.isPaid || current ? "outline" : "default"}
+                    disabled={!plan.isPaid || current || pending}
                     onClick={() => selectPlan(plan.slug)}
                   >
                     {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {plan.slug === "free" ? "Free" : current ? "Current plan" : stripeEnabled ? `Upgrade to ${plan.name}` : "Activate (test)"}
+                    {!plan.isPaid ? "Free" : current ? "Current plan" : stripeEnabled ? `Upgrade to ${plan.name}` : "Activate (test)"}
                   </Button>
                 </CardContent>
               </Card>

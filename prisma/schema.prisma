@@ -495,6 +495,7 @@ model Plan {
   slug                 String   @unique
   priceMonthly         Float
   priceYearly          Float?
+  applicationsPerDay   Int      @default(10)
   applicationsPerMonth Int
   tailoringsPerMonth   Int
   automationEnabled    Boolean  @default(false)

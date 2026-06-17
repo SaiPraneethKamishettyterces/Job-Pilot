@@ -88,6 +88,7 @@ export const config = {
     prices: {
       starter: optional("STRIPE_PRICE_STARTER"),
       pro: optional("STRIPE_PRICE_PRO"),
+      max: optional("STRIPE_PRICE_MAX"),
     } as Record<string, string>,
     successUrl: optional("STRIPE_SUCCESS_URL"), // falls back to <uiOrigin>/billing?status=success
     cancelUrl: optional("STRIPE_CANCEL_URL"),
@@ -98,6 +99,13 @@ export const config = {
   // external object store. Only the upload size cap is configurable here.
   storage: {
     maxUploadMb: num("MAX_UPLOAD_MB", 8),
+  },
+
+  // ── Billing / finance dashboard ─────────────────────────────────────────
+  // Monthly infrastructure cost estimate (Cloud Run + Cloud SQL + egress, etc.)
+  // used by the admin financials view to compute margin. App-tier estimate only.
+  billing: {
+    infraMonthlyUsd: num("INFRA_MONTHLY_USD", 0),
   },
 
   // ── Automation / pipeline ───────────────────────────────────────────────

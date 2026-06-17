@@ -25,6 +25,7 @@ import { activityRouter } from "./routes/activity.js";
 import { accountRouter } from "./routes/account.js";
 import { startRetryWorker } from "./workers/retry-worker.js";
 import { startDailyScheduler } from "./workers/daily-scheduler.js";
+import { ensurePlans } from "./services/billing/plan-catalog.js";
 
 const app = express();
 
@@ -98,4 +99,6 @@ app.listen(env.PORT, () => {
   // scheduler). Each is a no-op when disabled by config.
   startRetryWorker();
   startDailyScheduler();
+  // Seed the plan catalog (idempotent) so tiers exist for checkout/activation.
+  void ensurePlans().catch((err) => logger.error({ err: String(err) }, "ensurePlans failed"));
 });

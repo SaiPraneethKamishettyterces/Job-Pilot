@@ -14,8 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import {
-  getCompanyBilling, getUserBilling,
-  type CompanyBillingMetrics, type UserBillingRow,
+  getCompanyBilling, getUserBilling, getFinancials,
+  type CompanyBillingMetrics, type UserBillingRow, type Financials,
 } from "@/services/api";
 
 function usd(n: number) {
@@ -81,6 +81,12 @@ function CompanyTab() {
     staleTime: 60_000,
   });
 
+  const { data: fin, isLoading: finLoading } = useQuery<Financials>({
+    queryKey: ["billing", "financials"],
+    queryFn: getFinancials,
+    staleTime: 60_000,
+  });
+
   const ai = data?.aiCosts;
   const usage = data?.usage;
   const chartData = ai?.daily30Days ?? [];
@@ -104,6 +110,25 @@ function CompanyTab() {
           Could not load billing data — make sure the server is running and DATABASE_URL is configured.
         </div>
       )}
+
+      <div>
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Financials</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard label="MRR" value={usd(fin?.revenue.mrr ?? 0)} sub={`${fin?.revenue.activeSubscribers ?? 0} active subscribers · ARR ${usd(fin?.revenue.arr ?? 0)}`} icon={DollarSign} iconBg="bg-success/10 text-success" isLoading={finLoading} />
+          <KpiCard label="Gross Margin" value={usd(fin?.margin.grossProfit ?? 0)} sub={`${fin?.margin.marginPct ?? 0}% margin (MRR − AI − infra)`} icon={TrendingUp} iconBg="bg-primary/10 text-primary" isLoading={finLoading} />
+          <KpiCard label="Cost This Month" value={usd(fin?.costs.totalThisMonth ?? 0)} sub={`AI ${usd(fin?.costs.aiThisMonth ?? 0)} + infra ${usd(fin?.costs.infraMonthly ?? 0)}`} icon={Cpu} iconBg="bg-warning/10 text-warning" isLoading={finLoading} />
+          <KpiCard label="ARPU" value={usd(fin?.perUser.arpu ?? 0)} sub={`cost/active user ${usd(fin?.perUser.totalCostPerActiveUser ?? 0)}`} icon={Users} iconBg="bg-primary/10 text-primary" isLoading={finLoading} />
+        </div>
+        {(fin?.byPlan?.length ?? 0) > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {fin!.byPlan.map((p) => (
+              <Badge key={p.plan} variant="secondary" className="text-xs">
+                {p.plan}: {p.subscribers} × ${p.priceMonthly} = {usd(p.mrr)}/mo
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Claude AI Costs</h3>
