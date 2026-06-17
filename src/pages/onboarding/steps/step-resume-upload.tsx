@@ -16,6 +16,7 @@ export function StepResumeUpload({ onParsed }: Props) {
   const { token } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "uploading" | "parsing" | "done" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const onDrop = useCallback(async (accepted: File[]) => {
     const f = accepted[0];
@@ -35,7 +36,10 @@ export function StepResumeUpload({ onParsed }: Props) {
 
       setStatus("parsing");
 
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || "Upload failed");
+      }
       const data = await res.json();
 
       if (data.parsed) {
@@ -50,9 +54,11 @@ export function StepResumeUpload({ onParsed }: Props) {
 
       setStatus("done");
       toast.success("Resume parsed successfully!");
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to parse resume. You can still continue manually.";
       setStatus("error");
-      toast.error("Failed to parse resume. You can still continue manually.");
+      setErrorMsg(msg);
+      toast.error(msg);
     }
   }, [onParsed, token]);
 
@@ -109,14 +115,14 @@ export function StepResumeUpload({ onParsed }: Props) {
         {status === "error" && (
           <>
             <AlertCircle className="h-10 w-10 text-destructive mb-4" />
-            <p className="text-base font-medium text-destructive">Parsing failed</p>
-            <p className="text-sm text-muted-foreground mt-1">{file?.name}</p>
+            <p className="text-base font-medium text-destructive">Upload failed</p>
+            <p className="text-sm text-muted-foreground mt-1">{errorMsg ?? file?.name}</p>
           </>
         )}
       </div>
 
       {status === "error" && (
-        <Button variant="outline" onClick={() => setStatus("idle")} className="w-full">
+        <Button variant="outline" onClick={() => { setStatus("idle"); setErrorMsg(null); }} className="w-full">
           Try again
         </Button>
       )}
@@ -128,7 +134,7 @@ export function StepResumeUpload({ onParsed }: Props) {
         </div>
         <ul className="text-sm text-muted-foreground space-y-1 ml-6">
           <li>Claude extracts your skills, experience, and education</li>
-          <li>Your original file is stored securely</li>
+          <li>We keep the extracted text in your account; the uploaded file is discarded after parsing</li>
           <li>You can review and edit everything before proceeding</li>
           <li>We never invent skills or experience you don't have</li>
         </ul>

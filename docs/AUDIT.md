@@ -98,6 +98,31 @@ productionization. Admin billing page references a *separate* GCP F&B product
 - [x] Consent/disclaimer before automation — `/submit` is gated on
       `consentToDataProcessing`; Review page shows a disclaimer and surfaces the gate message.
 
+### B3 — post-launch hardening (Phase 3)
+- [x] **Single-store migration** — generated documents moved from GCS/local-fs into
+      Postgres (`Artifact` table, BYTEA). No external object store; survives restarts.
+      `@google-cloud/storage` dependency + `GCS_BUCKET_NAME` env removed.
+- [x] **DB indexes for billing aggregations** — `Application(userId,status,createdAt)`,
+      `AIUsageEvent(userId,createdAt)` + `(createdAt)`. Plus opt-in slow-query logging
+      (`SLOW_QUERY_MS`) in `server/lib/db.ts`.
+- [x] **GDPR audit trail + retention policy** — `AuditLog` model (no FK on `userId`, so
+      it survives deletion) + `recordAudit()` helper; export/delete now write audit rows.
+      Written policy in `docs/DATA_RETENTION.md`.
+- [x] **Unsupported-resume-format feedback** — multer rejections become clear 400s
+      ("Unsupported file type…", "too large"), empty/scanned-PDF detection, and the
+      onboarding/resume UIs surface the specific server message.
+- [x] **Manual-submit handoff UI** — Review page surfaces the apply URL + an "I've
+      submitted it" action for blocked/assisted statuses; new `POST /:id/mark-applied`.
+- [x] **Stripe webhook signature tests** — fails-closed when unconfigured; rejects a
+      forged signature when a secret is set.
+- [x] **Integration tests** — `*.integration.test.ts` (DB-backed) + `test:integration`
+      script + dedicated config; excluded from the DB-free CI `npm test` run.
+- [ ] **#16 Resume re-attachment vs real ATS file inputs** — DEFERRED: needs live ATS
+      application forms to validate the file-attach step against real DOM inputs; cannot
+      be exercised without external, login-gated ATS pages. Revisit during a real pilot.
+
 ### Also fixed this session
 - Express 5 production SPA fallback used a bare `*` (would crash boot in prod) → `/*splat`.
 - Onboarding resume upload posted without the auth token (would 401) → now attaches it.
+- Corrected the onboarding upload copy that claimed the original file is stored — only the
+  extracted text is kept (the upload is discarded after parsing).

@@ -4,6 +4,7 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { notFound } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { prisma } from "../lib/db.js";
+import { recordAudit } from "../lib/audit.js";
 
 export const accountRouter = Router();
 
@@ -38,6 +39,7 @@ accountRouter.get("/export", requireAuth, asyncHandler(async (req: AuthRequest, 
   };
 
   logger.info({ userId }, "Account data exported");
+  await recordAudit(userId, "account.export", "Full data export downloaded", req.ip ?? null);
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Content-Disposition", `attachment; filename="jobpilot-export-${userId}.json"`);
   res.send(JSON.stringify(payload, null, 2));
@@ -50,6 +52,9 @@ accountRouter.delete("/", requireAuth, asyncHandler(async (req: AuthRequest, res
   const exists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
   if (!exists) throw notFound("User not found");
 
+  // Record the deletion BEFORE removing the user; the audit row has no FK so it
+  // persists as the deletion trail after the cascade.
+  await recordAudit(userId, "account.delete", "Account and all related data permanently deleted", req.ip ?? null);
   await prisma.user.delete({ where: { id: userId } });
   logger.info({ userId }, "Account permanently deleted");
   res.json({ message: "Account deleted" });

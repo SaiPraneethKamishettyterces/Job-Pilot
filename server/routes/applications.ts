@@ -159,6 +159,23 @@ applicationsRouter.post("/:id/decline", requireAuth, asyncHandler(async (req: Au
   res.json({ application: updated });
 }));
 
+// POST /api/applications/:id/mark-applied — the user completed the application
+// themselves in their own browser (the assisted / manual handoff for blocked,
+// unsupported, or assist-required forms). Records it as APPLIED.
+applicationsRouter.post("/:id/mark-applied", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+  const id = req.params["id"] as string;
+  const app = await prisma.application.findFirst({ where: { id, userId: req.userId! }, select: { id: true } });
+  if (!app) throw notFound("Application not found");
+  const updated = await prisma.application.update({
+    where: { id },
+    data: { status: "APPLIED" as never, appliedAt: new Date() },
+  });
+  await prisma.applicationEvent.create({
+    data: { applicationId: id, type: "submitted_manually", description: "User marked as submitted (manual/assisted handoff)" },
+  });
+  res.json({ application: updated });
+}));
+
 // POST /api/applications/:id/submit — drive the browser to fill (and, only if
 // AUTO_SUBMIT is enabled, submit) the application form using the prepared package.
 // Safety: blockers (CAPTCHA/login/OTP) and unsupported ATS surface as

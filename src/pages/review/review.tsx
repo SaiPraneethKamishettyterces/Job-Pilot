@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, XCircle, Eye, AlertTriangle, FileDown, Send, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle, XCircle, Eye, AlertTriangle, FileDown, Send, Loader2, Sparkles, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +13,17 @@ import {
   approveApplication,
   declineApplication,
   submitApplication,
+  markApplied,
   generateDocuments,
 } from "@/services/api";
+
+// Statuses where automation can't finish the job — the user must complete the
+// application in their own browser (solve CAPTCHA / log in / unsupported ATS, or
+// assisted mode). For these we lead with the manual handoff, not auto-submit.
+const MANUAL_HANDOFF_STATUSES = [
+  "ASSISTED_REQUIRED", "CAPTCHA_REQUIRED", "LOGIN_REQUIRED",
+  "SKIPPED_UNSUPPORTED", "READY_FOR_USER_SUBMIT", "FORM_FILLED_READY_TO_SUBMIT",
+];
 
 // Statuses that belong in the review queue (the user must act on these).
 const REVIEW_STATUSES = [
@@ -98,6 +107,11 @@ export function ReviewPage() {
     onSuccess: (r) => { toast.success(`Generated: ${r.documentTypes.join(", ")}`); invalidate(); },
     onError: () => toast.error("Generation failed"),
   });
+  const markSubmitted = useMutation({
+    mutationFn: (id: string) => markApplied(id),
+    onSuccess: () => { toast.success("Marked as submitted"); setSelectedId(null); invalidate(); },
+    onError: () => toast.error("Could not update status"),
+  });
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-64"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -117,6 +131,8 @@ export function ReviewPage() {
   const pkg = app?.applicationPackage;
   const resumeDoc = app?.documents.find((d) => d.type === "resume");
   const coverDoc = app?.documents.find((d) => d.type === "cover_letter");
+  const applyUrl = pkg?.applyUrl ?? null;
+  const needsManual = app ? MANUAL_HANDOFF_STATUSES.includes(app.status) : false;
 
   return (
     <div className="flex gap-6 h-full">
@@ -236,6 +252,39 @@ export function ReviewPage() {
               )}
 
               <Separator />
+
+              {/* Manual handoff: when automation can't finish (CAPTCHA / login /
+                  unsupported ATS / assisted mode), guide the user to complete it
+                  themselves and then mark it as submitted. */}
+              {needsManual && (
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <ExternalLink className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium">Finish this one in your browser</p>
+                      <p className="text-muted-foreground mt-0.5">
+                        Everything is prepared. Open the application form, paste/attach your tailored resume,
+                        complete any CAPTCHA or login, submit, then mark it as submitted here.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    {applyUrl ? (
+                      <a href={applyUrl} target="_blank" rel="noreferrer">
+                        <Button><ExternalLink className="h-4 w-4" /> Open application form</Button>
+                      </a>
+                    ) : app.jobUrl ? (
+                      <a href={app.jobUrl} target="_blank" rel="noreferrer">
+                        <Button><ExternalLink className="h-4 w-4" /> Open job posting</Button>
+                      </a>
+                    ) : null}
+                    <Button variant="success" onClick={() => markSubmitted.mutate(app.id)} disabled={markSubmitted.isPending}>
+                      {markSubmitted.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                      I've submitted it
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />

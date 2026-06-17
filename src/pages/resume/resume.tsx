@@ -36,7 +36,10 @@ export function ResumePage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: fd,
       });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.message || "Upload failed");
+      }
       const body = await res.json();
       await queryClient.invalidateQueries({ queryKey: ["profile"] });
       setUploadStatus("idle");
@@ -46,9 +49,9 @@ export function ResumePage() {
           ? `Resume parsed${filled ? ` — pre-filled ${filled} profile field${filled === 1 ? "" : "s"}` : ""}!`
           : "Resume saved (AI parsing unavailable)",
       );
-    } catch {
+    } catch (err) {
       setUploadStatus("error");
-      toast.error("Upload failed. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Upload failed. Please try again.");
     }
   }, [token, queryClient]);
 

@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type Stripe from "stripe";
-import { resolveWebhookEvent } from "./stripe-service.js";
+import { resolveWebhookEvent, constructEvent } from "./stripe-service.js";
 
 // resolveWebhookEvent is pure (no Stripe client / network). It reads userId from
 // metadata/client_reference_id and classifies activating vs cancelling events.
@@ -51,5 +51,30 @@ describe("resolveWebhookEvent", () => {
   it("ignores unrelated event types", () => {
     const event = { type: "customer.created", data: { object: {} } } as unknown as Stripe.Event;
     expect(resolveWebhookEvent(event)).toBeNull();
+  });
+});
+
+// Signature verification is the security boundary for webhooks: an attacker who
+// can POST to the endpoint must not be able to forge an event.
+describe("constructEvent (signature verification)", () => {
+  it("refuses to verify when no webhook secret is configured (fails closed)", () => {
+    // The default test env has no STRIPE_WEBHOOK_SECRET → never accept unverified.
+    expect(() => constructEvent(Buffer.from("{}"), "t=1,v1=abc")).toThrow(/not configured/i);
+  });
+
+  it("rejects a tampered/forged signature when a secret IS configured", async () => {
+    // Re-import the module with a secret in env so constructEvent reaches Stripe's
+    // real HMAC verification, then feed it a forged signature.
+    vi.resetModules();
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_dummy_test_secret_for_verification");
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_dummy");
+    try {
+      const mod = await import("./stripe-service.js");
+      const body = Buffer.from(JSON.stringify({ id: "evt_1", type: "checkout.session.completed" }));
+      expect(() => mod.constructEvent(body, "t=123,v1=deadbeefdeadbeef")).toThrow();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 });

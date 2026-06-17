@@ -95,6 +95,11 @@ export async function submitApplication(
   return data;
 }
 
+export async function markApplied(id: string): Promise<{ application: Application }> {
+  const { data } = await api.post(`/api/applications/${id}/mark-applied`);
+  return data;
+}
+
 export async function retryApplication(
   id: string,
 ): Promise<{ retried: boolean; status?: string; reason: string; retryCount?: number }> {
