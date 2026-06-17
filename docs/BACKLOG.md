@@ -119,3 +119,21 @@ not on any local machine, and is verified end-to-end in that cloud environment._
 - ☑ 2026-06-17 — Phase-3 hardening: DB indexes, GDPR audit trail + retention doc, resume-format feedback, manual-submit handoff, webhook tests.
 - ☑ 2026-06-17 — Daily auto-apply scheduler (in-process, fixed time).
 - ☑ 2026-06-17 — AI refinement: free Gemini provider (tailoring stays on Claude), best-N matching foundation, semantic Q&A foundation.
+- ☑ 2026-06-17 — **Phase 1**: shortlist diversity (per-company cap); Ashby + Workable
+  no-login sources + wider net; 19 shared common application fields; best-practice
+  Q&A prompt + much broader grounded question coverage; copy/paste detail sheet +
+  per-vendor guidance for hard portals (Workday/iCIMS).
+- ☑ 2026-06-17 — **Phase 2**: tier catalog (Free/Starter 30·Pro 50·Max 75 per day)
+  with prices + per-day plan cap enforced in the pipeline; dynamic plans on the
+  billing page; admin Financials view (MRR/ARR, revenue by tier, AI+infra cost,
+  gross margin, ARPU/cost-per-user).
+- ☑ 2026-06-17 — **Phase 3**: day-wise Applications view (per-day sections with
+  applied/to-review/failed tallies) + List toggle.
+
+### Carried forward (Phase 1–3 sub-items not yet done)
+- 1.1 — learn from approve/decline + auto-calibrate threshold; labeled quality eval.
+- 1.3 — onboarding UI to capture the full set of fields the data model now supports.
+- 1.5 — per-portal guided step-by-step UI; decision on (no-)credential storage.
+- 2.1 — plan upgrade/downgrade + Stripe proration; cap-enforcement tests per tier.
+- 2.2 — billing charts/date-range/per-user drill-down; admin-only access control.
+- 3.1 — per-application status timeline; dashboard empty/loading/error-state pass.
