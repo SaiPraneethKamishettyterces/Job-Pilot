@@ -4,28 +4,13 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { jobRepository } from "../repositories/job-repository.js";
-import { getProfile, getPreferences } from "../services/profile/profile-service.js";
 import { parseJobDescription, fetchUrlText } from "../services/job-discovery/job-parser.js";
-import { scoreJobMatch, type ProfileSnapshot } from "../services/matching/match-scorer.js";
+import { scoreJobMatch } from "../services/matching/match-scorer.js";
+import { buildProfileSnapshot } from "../services/matching/profile-snapshot.js";
 import { addJobSchema } from "../../shared/validation.js";
 import { aiLimiter } from "../middleware/rate-limit.js";
 
 export const jobsRouter = Router();
-
-async function getProfileSnapshot(userId: string): Promise<ProfileSnapshot> {
-  const [profile, prefs] = await Promise.all([getProfile(userId), getPreferences(userId)]);
-  return {
-    skills: (profile?.skillsJson as string[] | undefined) ?? [],
-    yearsExperience: profile?.yearsExperience ?? null,
-    summary: profile?.summary ?? null,
-    workAuthorization: profile?.workAuthorization ?? null,
-    targetRoles: (prefs?.targetRolesJson as string[] | undefined) ?? [],
-    blockedCompanies: (prefs?.blockedCompaniesJson as string[] | undefined) ?? [],
-    remotePreference: prefs?.remotePreference ?? "any",
-    minSalary: prefs?.minSalary ?? null,
-    matchThreshold: prefs?.matchThreshold ?? 70,
-  };
-}
 
 // POST /api/jobs — parse JD from URL or text, score, save
 jobsRouter.post("/", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
@@ -64,7 +49,7 @@ jobsRouter.post("/", requireAuth, aiLimiter, asyncHandler(async (req: AuthReques
   });
 
   // 4. Score match
-  const profile = await getProfileSnapshot(userId);
+  const profile = await buildProfileSnapshot(userId);
   const matchResult = await scoreJobMatch(jobData, profile);
 
   // 5. Persist match
@@ -188,7 +173,7 @@ jobsRouter.post("/:id/rescore", requireAuth, aiLimiter, asyncHandler(async (req:
   const match = await jobRepository.findMatchWithJob(jobId, userId);
   if (!match) throw notFound("Job not found");
 
-  const profile = await getProfileSnapshot(userId);
+  const profile = await buildProfileSnapshot(userId);
   const jobData = {
     title: match.job.title,
     company: match.job.company,

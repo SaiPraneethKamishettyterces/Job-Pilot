@@ -11,31 +11,15 @@
 import { prisma } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { runIngestion } from "../services/ingestion/ingestion-orchestrator.js";
-import { scoreJobMatch, type ProfileSnapshot } from "../services/matching/match-scorer.js";
+import { scoreJobMatch } from "../services/matching/match-scorer.js";
+import { buildProfileSnapshot } from "../services/matching/profile-snapshot.js";
+import { selectTopMatches, type ScoredJob } from "../services/matching/select-matches.js";
 import type { ParsedJob } from "../services/job-discovery/job-parser.js";
 import { generateApplicationDocuments } from "../services/application/application-generator.js";
 import { remainingApplications, getPlanLimits } from "../services/billing/usage-limits.js";
 import { notifyRunCompleted } from "../services/notifications/email-service.js";
 
 const WORKER_NAME = "application-pipeline-worker";
-
-async function loadSnapshot(userId: string): Promise<ProfileSnapshot> {
-  const [profile, prefs] = await Promise.all([
-    prisma.userProfile.findUnique({ where: { userId } }),
-    prisma.userPreference.findUnique({ where: { userId } }),
-  ]);
-  return {
-    skills: (profile?.skillsJson as string[] | undefined) ?? [],
-    yearsExperience: profile?.yearsExperience ?? null,
-    summary: profile?.summary ?? null,
-    workAuthorization: profile?.workAuthorization ?? null,
-    targetRoles: (prefs?.targetRolesJson as string[] | undefined) ?? [],
-    blockedCompanies: (prefs?.blockedCompaniesJson as string[] | undefined) ?? [],
-    remotePreference: prefs?.remotePreference ?? "any",
-    minSalary: prefs?.minSalary ?? null,
-    matchThreshold: prefs?.matchThreshold ?? 70,
-  };
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toParsedJob(job: any): ParsedJob {
@@ -72,7 +56,7 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
   const userId = run.userId;
 
   try {
-    const snapshot = await loadSnapshot(userId);
+    const snapshot = await buildProfileSnapshot(userId);
     const prefs = await prisma.userPreference.findUnique({ where: { userId } });
     // Cap shortlist by BOTH the user's per-run/day preference AND the remaining
     // monthly allowance from their plan. The plan limit is the hard ceiling.
@@ -95,9 +79,16 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
 
     await prisma.applicationRun.update({ where: { id: runId }, data: { status: "SCORING" } });
 
-    let shortlisted = 0;
-    const shortlist: Array<{ jobId: string; score: number; company: string; title: string; jobUrl: string | null; atsPlatform: string | null }> = [];
+    // Jobs the user has ALREADY applied to (any run) — never re-surface them.
+    const appliedRows = await prisma.application.findMany({
+      where: { userId, jobId: { not: null } },
+      select: { jobId: true },
+    });
+    const alreadyApplied = new Set(appliedRows.map((r) => r.jobId).filter((v): v is string => Boolean(v)));
 
+    // Score EVERY discovered job, then globally rank — so the shortlist is the
+    // BEST `cap` matches, not the first `cap` over threshold in discovery order.
+    const scored: ScoredJob[] = [];
     for (const job of jobs) {
       const result = await scoreJobMatch(toParsedJob(job), snapshot);
       await prisma.jobMatch.upsert({
@@ -113,14 +104,15 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
           reasonsJson: result.reasons as any, risksJson: result.risks as any,
         },
       });
-      if (result.decision === "SHORTLIST" && shortlist.length < cap) {
-        shortlisted++;
-        shortlist.push({
-          jobId: job.id, score: result.score, company: job.company, title: job.title,
-          jobUrl: job.applyUrl ?? job.jobUrl ?? null, atsPlatform: job.atsPlatform ?? null,
-        });
-      }
+      scored.push({
+        jobId: job.id, score: result.score, decision: result.decision,
+        company: job.company, title: job.title,
+        jobUrl: job.applyUrl ?? job.jobUrl ?? null, atsPlatform: job.atsPlatform ?? null,
+      });
     }
+
+    const shortlist = selectTopMatches(scored, cap, alreadyApplied);
+    const shortlisted = shortlist.length;
 
     await prisma.applicationRun.update({
       where: { id: runId },

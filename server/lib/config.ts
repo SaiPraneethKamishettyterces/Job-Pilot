@@ -61,13 +61,22 @@ export const config = {
     bcryptRounds: num("BCRYPT_ROUNDS", 10),
   },
 
-  // ── Anthropic / Claude ──────────────────────────────────────────────────
+  // ── AI providers ──────────────────────────────────────────────────────────
   ai: {
+    // Anthropic / Claude — used for resume tailoring (the Claude skill).
     apiKey: optional("ANTHROPIC_API_KEY"),
     // Optional per-task model overrides (else model-config.ts defaults apply).
     modelOpus: optional("ANTHROPIC_MODEL_OPUS"),
     modelSonnet: optional("ANTHROPIC_MODEL_SONNET"),
     modelHaiku: optional("ANTHROPIC_MODEL_HAIKU"),
+
+    // OpenAI-compatible provider for everything else (default: Google Gemini free
+    // tier). Point compatBaseUrl at Groq / OpenRouter / Ollama to switch later.
+    compatBaseUrl: optional("AI_COMPAT_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+    compatApiKey: optional("AI_COMPAT_API_KEY"),
+    modelFlash: optional("AI_MODEL_FLASH", "gemini-2.5-flash"),
+    modelPro: optional("AI_MODEL_PRO", "gemini-2.5-pro"),
+    embedModel: optional("AI_EMBED_MODEL", "text-embedding-004"),
   },
 
   // ── Stripe (subscriptions / payments) ───────────────────────────────────

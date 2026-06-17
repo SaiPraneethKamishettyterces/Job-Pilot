@@ -1,4 +1,4 @@
-import { hasAnthropic, completeJson } from "../ai/ai-service.js";
+import { hasProvider, completeJson } from "../ai/ai-service.js";
 import { TASK_MODEL } from "../ai/model-config.js";
 import { JOB_PARSE_PROMPT } from "../ai/prompts.js";
 
@@ -21,12 +21,12 @@ export type ParsedJob = {
 };
 
 export async function parseJobDescription(rawText: string, jobUrl?: string): Promise<ParsedJob> {
-  if (!hasAnthropic()) {
-    throw new Error("ANTHROPIC_API_KEY is not configured");
+  if (!hasProvider(TASK_MODEL.jobParse.provider)) {
+    throw new Error("AI provider for job parsing is not configured");
   }
 
   const { data } = await completeJson<Omit<ParsedJob, "jobUrl">>({
-    model: TASK_MODEL.jobParse,
+    ...TASK_MODEL.jobParse,
     maxTokens: 2048,
     messages: [{ role: "user", content: `${JOB_PARSE_PROMPT}\n\n${rawText.slice(0, 12000)}` }],
   });

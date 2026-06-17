@@ -179,10 +179,14 @@ Decision thresholds (threshold = candidate's matchThreshold setting):
 - SKIP: score < threshold - 15, OR blocked company, OR hard disqualification
 
 Scoring guidance:
-- Skill overlap (40%): how many required skills does the candidate have?
-- Experience (25%): does years of experience fit the range?
+- Skill overlap (40%): how many required skills does the candidate have? Use the
+  candidate's detailed experience, projects, and certifications — not just the
+  skills list — as evidence of a skill.
+- Experience (25%): do the years AND the actual roles/achievements fit the job?
 - Location/remote (15%): does remote preference and location align?
-- Role fit (10%): is the role in their target roles?
+- Role fit (10%): is the role in their target roles / career trajectory?
 - Work auth + salary (10%): hard requirements met?
 
+Base the score on the full candidate context provided (summary, experience
+entries, projects, education), not only the skills line.
 Be realistic. Most strong applications score 65-85. Reserve 90+ for near-perfect.`;

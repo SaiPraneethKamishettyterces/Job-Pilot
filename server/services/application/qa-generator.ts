@@ -1,8 +1,9 @@
-import { completeText, hasAnthropic } from "../ai/ai-service.js";
+import { completeText, hasProvider, hasCompat, compatEmbed } from "../ai/ai-service.js";
 import { TASK_MODEL } from "../ai/model-config.js";
 import { QUESTION_SYSTEM, buildQuestionPrompt } from "../ai/prompts.js";
 import { recordUsage } from "../ai/usage-recorder.js";
 import { logger } from "../../lib/logger.js";
+import { bestSemanticMatch, type StoredVec } from "./semantic-match.js";
 import { effectiveFullName, profileSummary, type CandidateProfile } from "../profile/candidate-profile.js";
 
 // Answer an application question from structured data first, AI only as a last
@@ -21,6 +22,8 @@ import { effectiveFullName, profileSummary, type CandidateProfile } from "../pro
 // confidence < 0.75 also flags needsUserAction.
 
 export const CONFIDENCE_THRESHOLD = 0.75;
+// Cosine-similarity floor for reusing a stored answer on a re-worded question.
+export const SEMANTIC_THRESHOLD = 0.8;
 
 export interface AnswerResult {
   answer: string | null;
@@ -85,6 +88,29 @@ function fromCustomAnswers(question: string, p: CandidateProfile): AnswerResult 
   }
   if (best) {
     return mk(best.value, Math.round(best.ratio * 100) / 100, "custom_answers", "fuzzy custom-answer match", false);
+  }
+  return null;
+}
+
+// Semantic match: when the same question is asked in different words, reuse the
+// user's stored answer via embeddings (the fuzzy step only catches near-identical
+// wording). Gated on the embeddings provider; silently skips if unavailable.
+async function fromSemantic(question: string, p: CandidateProfile): Promise<AnswerResult | null> {
+  if (!hasCompat()) return null;
+  const entries = Object.entries(p.customAnswers ?? {});
+  if (!entries.length) return null;
+  try {
+    const inputs = [question, ...entries.map(([k]) => k)];
+    const vecs = await compatEmbed(inputs);
+    if (vecs.length !== inputs.length) return null;
+    const qVec = vecs[0]!;
+    const stored: StoredVec[] = entries.map(([k, v], i) => ({ question: k, answer: v, vec: vecs[i + 1]! }));
+    const best = bestSemanticMatch(qVec, stored);
+    if (best && best.score >= SEMANTIC_THRESHOLD) {
+      return mk(best.answer, Math.round(best.score * 100) / 100, "custom_answers", "semantic custom-answer match", false);
+    }
+  } catch (err) {
+    logger.warn({ err: String(err) }, "semantic question match failed");
   }
   return null;
 }
@@ -171,6 +197,10 @@ export async function answerQuestion(
   const custom = fromCustomAnswers(question, profile);
   if (custom) return finalize(custom);
 
+  // 2b: semantic match — same question, different wording → reuse stored answer.
+  const semantic = await fromSemantic(question, profile);
+  if (semantic) return finalize(semantic);
+
   const isSensitive = SENSITIVE_PATTERNS.test(question);
 
   // 3: direct profile-field mapping.
@@ -186,10 +216,10 @@ export async function answerQuestion(
   }
 
   // 4: AI for generic open-ended questions only.
-  if (GENERIC_PATTERNS.test(question) && hasAnthropic()) {
+  if (GENERIC_PATTERNS.test(question) && hasProvider(TASK_MODEL.questionAnswer.provider)) {
     try {
       const { text, usage } = await completeText({
-        model: TASK_MODEL.questionAnswer,
+        ...TASK_MODEL.questionAnswer,
         maxTokens: 300,
         system: QUESTION_SYSTEM,
         messages: [

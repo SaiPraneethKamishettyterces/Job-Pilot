@@ -116,7 +116,7 @@ async function produceContent(
     });
     try {
       const { data, usage } = await completeJson<{ resume?: unknown; analysis?: unknown }>({
-        model: TASK_MODEL.tailorResume,
+        ...TASK_MODEL.tailorResume,
         maxTokens: 4000,
         system,
         messages: [{ role: "user", content: prompt }],

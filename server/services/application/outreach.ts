@@ -1,4 +1,4 @@
-import { completeText, hasAnthropic } from "../ai/ai-service.js";
+import { completeText, hasProvider } from "../ai/ai-service.js";
 import { TASK_MODEL } from "../ai/model-config.js";
 import {
   coverLetterSystem,
@@ -35,9 +35,9 @@ export async function generateCoverLetter(
   ctx: GenCtx,
   tone = "professional",
 ): Promise<string | null> {
-  if (!hasAnthropic()) return null;
+  if (!hasProvider(TASK_MODEL.coverLetter.provider)) return null;
   const { text, usage } = await completeText({
-    model: TASK_MODEL.coverLetter,
+    ...TASK_MODEL.coverLetter,
     maxTokens: 1024,
     system: coverLetterSystem(tone),
     messages: [{ role: "user", content: coverLetterUser(jobDescription, coverProfile(profile)) }],
@@ -54,9 +54,9 @@ export async function generateColdEmail(
   profile: CandidateProfile,
   ctx: GenCtx,
 ): Promise<string | null> {
-  if (!hasAnthropic()) return null;
+  if (!hasProvider(TASK_MODEL.coldEmail.provider)) return null;
   const { text, usage } = await completeText({
-    model: TASK_MODEL.coldEmail,
+    ...TASK_MODEL.coldEmail,
     maxTokens: 512,
     system: COLD_EMAIL_SYSTEM,
     messages: [
