@@ -24,6 +24,7 @@ import { filesRouter } from "./routes/files.js";
 import { activityRouter } from "./routes/activity.js";
 import { accountRouter } from "./routes/account.js";
 import { startRetryWorker } from "./workers/retry-worker.js";
+import { startDailyScheduler } from "./workers/daily-scheduler.js";
 
 const app = express();
 
@@ -93,6 +94,8 @@ app.use(errorHandler);
 
 app.listen(env.PORT, () => {
   logger.info(`BFF running on http://localhost:${env.PORT}`);
-  // Start background workers (e.g. failed-application retry). No-op when disabled.
+  // Start background workers (failed-application retry + daily auto-apply
+  // scheduler). Each is a no-op when disabled by config.
   startRetryWorker();
+  startDailyScheduler();
 });

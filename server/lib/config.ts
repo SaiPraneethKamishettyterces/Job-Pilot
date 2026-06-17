@@ -112,6 +112,14 @@ export const config = {
       // as stuck (e.g. the instance that started it was recycled) and recovered.
       stuckRunMinutes: num("STUCK_RUN_MINUTES", 20),
     },
+    // Daily auto-apply scheduler: once per day at `hour` (server-local), start a
+    // run for every active subscriber who hasn't already had a scheduled run that
+    // day. In-process (like retry); off in test.
+    scheduler: {
+      enabled: bool("DAILY_SCHEDULER_ENABLED", NODE_ENV !== "test"),
+      hour: num("DAILY_RUN_HOUR", 8), // server-local hour 0–23
+      checkIntervalMinutes: num("DAILY_SCHEDULER_INTERVAL_MINUTES", 30),
+    },
   },
 
   // ── Notifications (email) ─────────────────────────────────────────────────
