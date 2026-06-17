@@ -11,6 +11,11 @@ COPY . .
 RUN npm run build
 
 # ── runtime ──────────────────────────────────────────────────────────────────
+# NOTE: Chromium/Playwright browsers are intentionally NOT installed — the app
+# ships in "assisted" automation mode (AUTOMATION_MODE=assisted): it prepares the
+# autofill package + documents and the user submits. This keeps the image small
+# and Cloud Run memory low. To enable headless auto-fill (AUTOMATION_MODE=auto),
+# add a Playwright/Chromium install step here and raise Cloud Run memory to >=1GiB.
 FROM node:20-slim
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080

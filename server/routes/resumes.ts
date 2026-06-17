@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response, type NextFunction } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
@@ -6,11 +6,18 @@ import { requireAuth, type AuthRequest } from "../lib/auth-middleware.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { AppError, badRequest } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
-import { hasAnthropic, completeJson } from "../services/ai/ai-service.js";
+import { hasProvider, completeJson } from "../services/ai/ai-service.js";
 import { TASK_MODEL } from "../services/ai/model-config.js";
 import { RESUME_PARSE_PROMPT } from "../services/ai/prompts.js";
+import { ingestResume, type ParsedResume } from "../services/profile/resume-ingest.js";
 
 export const resumesRouter = Router();
+
+const ALLOWED_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -23,12 +30,29 @@ const upload = multer({
       cb(null, `${Date.now()}-${file.originalname.replace(/[^a-z0-9.]/gi, "_")}`);
     },
   }),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter: (_req, file, cb) => {
-    const allowed = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
-    cb(null, allowed.includes(file.mimetype));
+    // Reject with a tagged error so the wrapper can return a clear 400 instead of
+    // silently dropping the file (which surfaced as a confusing "No file uploaded").
+    if (ALLOWED_TYPES.includes(file.mimetype)) return cb(null, true);
+    cb(new Error("UNSUPPORTED_FILE_TYPE"));
   },
 });
+
+// Wrap multer so its rejections (wrong type, too big) become clean 400s with a
+// message the UI can show the user verbatim.
+function uploadResume(req: AuthRequest, res: Response, next: NextFunction) {
+  upload.single("resume")(req, res, (err: unknown) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+      return next(badRequest("Resume is too large. The maximum size is 10 MB."));
+    }
+    if (err instanceof Error && err.message === "UNSUPPORTED_FILE_TYPE") {
+      return next(badRequest("Unsupported file type. Please upload a PDF or DOCX resume."));
+    }
+    return next(err);
+  });
+}
 
 async function extractText(filePath: string, mimetype: string): Promise<string> {
   if (mimetype === "application/pdf") {
@@ -50,7 +74,7 @@ async function extractText(filePath: string, mimetype: string): Promise<string> 
   return result.value;
 }
 
-resumesRouter.post("/upload-parse", requireAuth, upload.single("resume"), asyncHandler(async (req: AuthRequest, res) => {
+resumesRouter.post("/upload-parse", requireAuth, uploadResume, asyncHandler(async (req: AuthRequest, res) => {
   if (!req.file) throw badRequest("No file uploaded");
 
   const filePath = req.file.path;
@@ -60,26 +84,49 @@ resumesRouter.post("/upload-parse", requireAuth, upload.single("resume"), asyncH
   try {
     const rawText = await extractText(filePath, mimetype);
 
-    if (!hasAnthropic()) {
-      res.json({ message: "File uploaded", rawText: rawText.slice(0, 500), parsed: null });
-      return;
+    // A near-empty extraction usually means a scanned/image-only PDF (no text
+    // layer) or a corrupt file — tell the user specifically rather than failing
+    // generically later.
+    if (rawText.trim().length < 20) {
+      throw badRequest(
+        "Couldn't read any text from this file. If it's a scanned PDF (image only), upload a text-based PDF or a DOCX.",
+      );
     }
 
-    const { data: parsed } = await completeJson({
-      model: TASK_MODEL.resumeParse,
-      maxTokens: 4096,
-      messages: [{ role: "user", content: `${RESUME_PARSE_PROMPT}\n\n${rawText}` }],
+    // Parse with Claude when available; otherwise persist the raw text only so
+    // resume tailoring still has a base resume to work from.
+    let parsed: ParsedResume | null = null;
+    if (hasProvider(TASK_MODEL.resumeParse.provider)) {
+      const { data } = await completeJson({
+        ...TASK_MODEL.resumeParse,
+        maxTokens: 4096,
+        messages: [{ role: "user", content: `${RESUME_PARSE_PROMPT}\n\n${rawText}` }],
+      });
+      parsed = data as ParsedResume;
+    }
+
+    // Persist the Resume row (rawText → tailoring) and auto-populate any blank
+    // profile fields from the parse (non-destructive).
+    const { resumeId, filledFields } = await ingestResume(req.userId!, parsed, {
+      fileName,
+      fileType: mimetype,
+      originalFileUrl: fileName,
+      rawText,
     });
-    logger.info({ userId: req.userId, fileName }, "Resume parsed");
+    logger.info({ userId: req.userId, fileName, resumeId, filledFields }, "Resume ingested");
 
     res.json({
-      message: "Resume parsed successfully",
+      message: parsed ? "Resume parsed and saved" : "Resume saved (parsing unavailable)",
       fileName,
+      resumeId,
       rawText: rawText.slice(0, 200),
       parsed,
+      autoPopulatedFields: filledFields,
     });
   } catch (err) {
-    // Log the detail server-side; return a clean message (no internal leak).
+    // Clean client errors (unsupported format, empty/scanned file) pass through
+    // with their specific message; only unexpected failures collapse to a 500.
+    if (err instanceof AppError) throw err;
     const msg = err instanceof Error ? err.message : "Unknown error";
     logger.error({ err: msg }, "Resume parse failed");
     throw new AppError(500, "Failed to parse resume");

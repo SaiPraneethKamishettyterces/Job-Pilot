@@ -7,27 +7,51 @@
 // (4) fire the in-process ingestion worker. The frontend never sets this state.
 import { prisma } from "../../lib/db.js";
 import { logger } from "../../lib/logger.js";
-import { createIngestionRun, triggerIngestion } from "../ingestion/ingestion-orchestrator.js";
+import { createIngestionRun } from "../ingestion/ingestion-orchestrator.js";
+import { triggerFullPipeline } from "../../workers/application-pipeline.js";
+import { resolvePlanRecord } from "./plan-catalog.js";
 
-const DEFAULT_PLAN = {
-  slug: "starter-test",
-  name: "Starter (Test)",
-  priceMonthly: 0,
-  applicationsPerMonth: 100,
-  tailoringsPerMonth: 100,
-};
-
-async function ensureDefaultPlan() {
-  return prisma.plan.upsert({
-    where: { slug: DEFAULT_PLAN.slug },
-    create: { ...DEFAULT_PLAN, automationEnabled: true, analyticsEnabled: true },
+/**
+ * Initialize a user's data structures so the pipeline can run. In Job-Pilot's
+ * normalized schema this means ensuring the per-user UserPreference row exists
+ * (Job/Application rows are created per-run by the pipeline). This replaces the
+ * legacy engine's per-user BigQuery table creation with a clean relational model.
+ */
+export async function ensureUserInitialized(userId: string) {
+  await prisma.userPreference.upsert({
+    where: { userId },
+    create: { userId },
     update: {},
   });
+}
+
+/** Mark a subscription cancelled (from a verified cancellation webhook). */
+export async function cancelSubscription(userId: string) {
+  const existing = await prisma.subscription.findUnique({ where: { userId } });
+  if (!existing) return null;
+  const updated = await prisma.subscription.update({
+    where: { userId },
+    data: { status: "cancelled", cancelAtPeriodEnd: true },
+  });
+  await prisma.subscriptionEvent.create({
+    data: {
+      userId,
+      paymentProvider: existing.paymentProvider,
+      eventType: "subscription_cancelled",
+      oldStatus: existing.status,
+      newStatus: "cancelled",
+      processingStatus: "processed",
+      processedAt: new Date(),
+    },
+  });
+  logger.info({ userId }, "Subscription cancelled");
+  return updated;
 }
 
 export type ActivateOptions = {
   paymentProvider?: "stripe" | "manual" | "test";
   eventType?: string;
+  planSlug?: string;
   planName?: string;
   amountPaid?: number;
   currency?: string;
@@ -47,8 +71,9 @@ export async function activateSubscription(userId: string, opts: ActivateOptions
   const existing = await prisma.subscription.findUnique({ where: { userId } });
   const oldStatus = existing?.status ?? "inactive";
 
-  // 1. Flip subscription to active (create one if absent).
-  const plan = await ensureDefaultPlan();
+  // 1. Flip subscription to active (create one if absent). The tier is chosen by
+  //    planSlug (from Stripe checkout metadata / dev activation); unknown → free.
+  const plan = await resolvePlanRecord(opts.planSlug ?? opts.planName);
   const now = new Date();
   const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const subscription = await prisma.subscription.upsert({
@@ -89,13 +114,16 @@ export async function activateSubscription(userId: string, opts: ActivateOptions
     },
   });
 
-  // 3. Create the ingestion run (T3) and 4. start the worker.
+  // 3. Initialize the user's data structures (idempotent), then create the run
+  //    (T3) and 4. start the full pipeline (discover jobs → score → generate
+  //    applications). The frontend never triggers this.
+  await ensureUserInitialized(userId);
   const run = await createIngestionRun(userId, "payment_activated");
-  triggerIngestion(run.id);
+  triggerFullPipeline(run.id);
 
   logger.info(
     { userId, runId: run.id, oldStatus, provider },
-    "Subscription activated → ingestion run started"
+    "Subscription activated → full application pipeline started"
   );
 
   return { subscription, event, run };

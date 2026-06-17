@@ -6,6 +6,7 @@ export interface User {
   name?: string;
   avatarUrl?: string;
   onboardingDone: boolean;
+  emailVerified?: boolean;
   createdAt: string;
 }
 
@@ -66,6 +67,41 @@ export interface UserProfile {
   experience: WorkExperience[];
   projects: Project[];
   certifications: string[];
+  // Generic ATS application details (filled once, reused on every application).
+  legalFirstName?: string;
+  legalLastName?: string;
+  preferredName?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
+  personalWebsite?: string;
+  requiresSponsorship?: boolean;
+  visaStatus?: string;
+  currentEmployer?: string;
+  currentTitle?: string;
+  highestEducation?: string;
+  school?: string;
+  degree?: string;
+  major?: string;
+  graduationYear?: string;
+  willingToRelocate?: boolean;
+  noticePeriod?: string;
+  availabilityToStart?: string;
+  desiredSalary?: string;
+  coverLetterPreference?: string;
+  howHeard?: string;
+  referralName?: string;
+  referralSource?: string;
+  // EEO (voluntary)
+  gender?: string;
+  raceEthnicity?: string;
+  veteranStatus?: string;
+  disabilityStatus?: string;
+  consentToDataProcessing?: boolean;
+  consentAt?: string;
 }
 
 export interface UserPreference {
@@ -127,14 +163,24 @@ export interface JobMatch {
 export type ApplicationStatus =
   | "DISCOVERED"
   | "SHORTLISTED"
+  | "MATCHED"
   | "GENERATED"
+  | "TAILORED_RESUME_READY"
   | "NEEDS_APPROVAL"
   | "APPROVED"
+  | "APPLICATION_STARTED"
+  | "FORM_FILLED_READY_TO_SUBMIT"
+  | "READY_FOR_USER_SUBMIT"
   | "APPLIED"
   | "ASSISTED_REQUIRED"
+  | "CAPTCHA_REQUIRED"
+  | "LOGIN_REQUIRED"
+  | "QUESTION_NEEDS_REVIEW"
   | "DRAFT_ONLY"
   | "DECLINED"
   | "FAILED"
+  | "FAILED_TECHNICAL"
+  | "SKIPPED_UNSUPPORTED"
   | "ARCHIVED"
   | "FOLLOW_UP_DUE";
 
@@ -241,4 +287,36 @@ export interface OnboardingFormData {
   applicationsPerDay: number;
   approvalMode: string;
   matchThreshold: number;
+  // Generic ATS application details (filled once, reused on every application)
+  legalFirstName?: string;
+  legalLastName?: string;
+  preferredName?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
+  personalWebsite?: string;
+  requiresSponsorship?: boolean;
+  visaStatus?: string;
+  currentEmployer?: string;
+  currentTitle?: string;
+  highestEducation?: string;
+  school?: string;
+  degree?: string;
+  major?: string;
+  graduationYear?: string;
+  willingToRelocate?: boolean;
+  noticePeriod?: string;
+  availabilityToStart?: string;
+  desiredSalary?: string;
+  coverLetterPreference?: string;
+  howHeard?: string;
+  referralName?: string;
+  // EEO (voluntary)
+  gender?: string;
+  raceEthnicity?: string;
+  veteranStatus?: string;
+  disabilityStatus?: string;
+  consentToDataProcessing?: boolean;
 }

@@ -1,7 +1,8 @@
-import type Anthropic from "@anthropic-ai/sdk";
-import { getAnthropic } from "./client.js";
+import type { Anthropic } from "@anthropic-ai/sdk";
+import { getAnthropic, hasAnthropic } from "./client.js";
+import { compatComplete, compatStream, hasCompat } from "./openai-provider.js";
 import { summarizeUsage, type TokenSummary } from "./token-tracker.js";
-import { MODELS, type ModelId } from "./model-config.js";
+import { TASK_MODEL, type Provider } from "./model-config.js";
 import {
   coverLetterSystem,
   coverLetterUser,
@@ -9,17 +10,23 @@ import {
 } from "./prompts.js";
 
 export { hasAnthropic } from "./client.js";
+export { hasCompat, compatEmbed } from "./openai-provider.js";
 export type { TokenSummary } from "./token-tracker.js";
 
+/** Is the provider backing a given task configured (has a key)? */
+export function hasProvider(provider: Provider): boolean {
+  return provider === "anthropic" ? hasAnthropic() : hasCompat();
+}
+
 interface CompleteOpts {
-  model: ModelId;
+  provider: Provider;
+  model: string;
   maxTokens: number;
   system?: string;
   messages: Anthropic.MessageParam[];
 }
 
-/** Single text completion. Returns the assistant text + a token/cost summary. */
-export async function completeText(
+async function anthropicComplete(
   opts: CompleteOpts,
 ): Promise<{ text: string; usage: TokenSummary }> {
   const client = getAnthropic();
@@ -36,10 +43,17 @@ export async function completeText(
   return { text: content.text, usage: summarizeUsage(opts.model, response.usage) };
 }
 
+/** Single text completion. Routes to the task's provider. */
+export async function completeText(
+  opts: CompleteOpts,
+): Promise<{ text: string; usage: TokenSummary }> {
+  return opts.provider === "anthropic" ? anthropicComplete(opts) : compatComplete(opts);
+}
+
 /** Extract the first JSON object from model output (tolerates stray prose). */
 export function extractJson<T>(text: string): T {
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("Claude did not return valid JSON");
+  if (!match) throw new Error("Model did not return valid JSON");
   return JSON.parse(match[0]) as T;
 }
 
@@ -56,12 +70,17 @@ export async function completeJson<T>(
  * is the final TokenSummary once the stream completes.
  */
 export async function* streamText(opts: {
-  model: ModelId;
+  provider: Provider;
+  model: string;
   maxTokens: number;
   system?: string;
   messages: Anthropic.MessageParam[];
   thinking?: Anthropic.MessageCreateParams["thinking"];
 }): AsyncGenerator<string, TokenSummary, void> {
+  if (opts.provider === "openai") {
+    return yield* compatStream(opts);
+  }
+
   const client = getAnthropic();
   const stream = client.messages.stream({
     model: opts.model,
@@ -81,18 +100,21 @@ export async function* streamText(opts: {
   return summarizeUsage(opts.model, final.usage);
 }
 
-/** Count input tokens for a prospective request (cost preview). */
+/**
+ * Estimate input tokens for a prospective request (cost preview only). The
+ * OpenAI-compatible endpoint has no token-count API, so this is a cheap
+ * heuristic (~4 chars/token) good enough for a UI preview.
+ */
 export async function countInputTokens(
   messages: Anthropic.MessageParam[],
   system?: string,
 ): Promise<number> {
-  const client = getAnthropic();
-  const result = await client.messages.countTokens({
-    model: MODELS.opus,
-    ...(system ? { system } : {}),
-    messages,
-  });
-  return result.input_tokens;
+  const text =
+    (system ?? "") +
+    messages
+      .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+      .join("\n");
+  return Math.ceil(text.length / 4);
 }
 
 /** High-level: stream a tailored cover letter paragraph. */
@@ -102,9 +124,8 @@ export function generateCoverLetterStream(
   tone = "professional",
 ): AsyncGenerator<string, TokenSummary, void> {
   return streamText({
-    model: MODELS.opus,
+    ...TASK_MODEL.coverLetter,
     maxTokens: 1024,
-    thinking: { type: "adaptive" },
     system: coverLetterSystem(tone),
     messages: [{ role: "user", content: coverLetterUser(jobDescription, userProfile) }],
   });

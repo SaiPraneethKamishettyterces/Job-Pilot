@@ -4,8 +4,8 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
-  DollarSign, Users, Cpu, Layers, TrendingUp, AlertCircle,
-  ChevronDown, ChevronRight, Cloud, ClipboardList,
+  DollarSign, Users, Cpu, Layers, TrendingUp,
+  ChevronDown, ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import {
-  getCompanyBilling, getUserBilling,
-  type CompanyBillingMetrics, type UserBillingRow,
+  getCompanyBilling, getUserBilling, getFinancials,
+  type CompanyBillingMetrics, type UserBillingRow, type Financials,
 } from "@/services/api";
 
 function usd(n: number) {
@@ -74,50 +74,16 @@ function KpiCard({
   );
 }
 
-function CloudBacklog({ cloud }: { cloud: CompanyBillingMetrics["cloud"] }) {
-  return (
-    <Card className="border-dashed border-muted-foreground/40">
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <Cloud className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-base">GCP Cloud & Hosting Costs</CardTitle>
-          <Badge variant="secondary" className="ml-auto">Backlog</Badge>
-        </div>
-        <CardDescription>Billing export is live in BigQuery — backend integration pending.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="rounded-md bg-muted/50 px-3 py-2 text-xs font-mono text-muted-foreground">
-          {cloud.dataAvailableAt}
-        </div>
-        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2">
-          <AlertCircle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
-          <p className="text-xs text-amber-700 dark:text-amber-400">
-            GCP costs (Cloud Run, Cloud SQL, BigQuery compute) are tracked in the billing export
-            but require a BigQuery client in this backend to surface here.
-          </p>
-        </div>
-        <div>
-          <p className="text-xs font-medium mb-2 flex items-center gap-1">
-            <ClipboardList className="h-3 w-3" /> Backlog items
-          </p>
-          <ul className="space-y-1">
-            {cloud.backlogItems.map((item) => (
-              <li key={item} className="flex items-start gap-2 text-xs text-muted-foreground">
-                <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function CompanyTab() {
   const { data, isLoading, isError } = useQuery<CompanyBillingMetrics>({
     queryKey: ["billing", "company"],
     queryFn: getCompanyBilling,
+    staleTime: 60_000,
+  });
+
+  const { data: fin, isLoading: finLoading } = useQuery<Financials>({
+    queryKey: ["billing", "financials"],
+    queryFn: getFinancials,
     staleTime: 60_000,
   });
 
@@ -144,6 +110,25 @@ function CompanyTab() {
           Could not load billing data — make sure the server is running and DATABASE_URL is configured.
         </div>
       )}
+
+      <div>
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Financials</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard label="MRR" value={usd(fin?.revenue.mrr ?? 0)} sub={`${fin?.revenue.activeSubscribers ?? 0} active subscribers · ARR ${usd(fin?.revenue.arr ?? 0)}`} icon={DollarSign} iconBg="bg-success/10 text-success" isLoading={finLoading} />
+          <KpiCard label="Gross Margin" value={usd(fin?.margin.grossProfit ?? 0)} sub={`${fin?.margin.marginPct ?? 0}% margin (MRR − AI − infra)`} icon={TrendingUp} iconBg="bg-primary/10 text-primary" isLoading={finLoading} />
+          <KpiCard label="Cost This Month" value={usd(fin?.costs.totalThisMonth ?? 0)} sub={`AI ${usd(fin?.costs.aiThisMonth ?? 0)} + infra ${usd(fin?.costs.infraMonthly ?? 0)}`} icon={Cpu} iconBg="bg-warning/10 text-warning" isLoading={finLoading} />
+          <KpiCard label="ARPU" value={usd(fin?.perUser.arpu ?? 0)} sub={`cost/active user ${usd(fin?.perUser.totalCostPerActiveUser ?? 0)}`} icon={Users} iconBg="bg-primary/10 text-primary" isLoading={finLoading} />
+        </div>
+        {(fin?.byPlan?.length ?? 0) > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {fin!.byPlan.map((p) => (
+              <Badge key={p.plan} variant="secondary" className="text-xs">
+                {p.plan}: {p.subscribers} × ${p.priceMonthly} = {usd(p.mrr)}/mo
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Claude AI Costs</h3>
@@ -313,8 +298,6 @@ function CompanyTab() {
           )}
         </CardContent>
       </Card>
-
-      {data && <CloudBacklog cloud={data.cloud} />}
     </div>
   );
 }
@@ -380,13 +363,6 @@ function UserRow({ user }: { user: UserBillingRow }) {
                   <div className="flex justify-between"><span>Status</span><span className="capitalize">{user.plan.status}</span></div>
                   {user.plan.periodEnd && <div className="flex justify-between"><span>Renews</span><span>{new Date(user.plan.periodEnd).toLocaleDateString()}</span></div>}
                   <div className="flex justify-between"><span>App limit</span><span>{user.plan.applicationsPerMonth}/mo</span></div>
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-semibold mb-2">Cloud & Hosting Cost</p>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <AlertCircle className="h-3 w-3 text-amber-500" />
-                  GCP per-user cost attribution — backlog
                 </div>
               </div>
             </div>
@@ -467,22 +443,6 @@ function UsersTab() {
               </table>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card className="border-dashed border-muted-foreground/40">
-        <CardContent className="p-4 flex items-start gap-3">
-          <Cloud className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium">User-wise GCP & Hosting Costs</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Per-user Cloud Run and Cloud SQL cost attribution requires resource labels
-              (<code className="text-xs bg-muted px-1 rounded">user_id</code> label on GCP resources)
-              and a BigQuery query against <code className="text-xs bg-muted px-1 rounded">mart_billing_daily</code>.
-              This is in the backlog.
-            </p>
-          </div>
-          <Badge variant="secondary" className="ml-auto shrink-0">Backlog</Badge>
         </CardContent>
       </Card>
     </div>

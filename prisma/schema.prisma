@@ -16,6 +16,8 @@ model User {
   authProviderId String?  @unique
   avatarUrl      String?
   onboardingDone Boolean  @default(false)
+  emailVerified  Boolean  @default(false)
+  emailVerifiedAt DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -32,18 +34,78 @@ model User {
 
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
+// The single store of GENERIC, reusable application data — the answers to the
+// common questions every no-login ATS (Greenhouse/Lever/Ashby/Workable) asks, so
+// the user fills them once. Role-/job-specific answers are NOT stored here; they
+// live per-application in ApplicationAnswer.
 model UserProfile {
   id               String   @id @default(cuid())
   userId           String   @unique
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Identity
   fullName         String
+  legalFirstName   String?
+  legalLastName    String?
+  preferredName    String?
+
+  // Contact / address (email lives on User)
   phone            String?
-  location         String?
-  workAuthorization String?
-  yearsExperience  Int?
+  location         String?   // free-form "City, State" convenience field
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  state            String?
+  zipCode          String?
+  country          String?
+
+  // Links
   linkedinUrl      String?
   githubUrl        String?
   portfolioUrl     String?
+  personalWebsite  String?
+
+  // Work authorization
+  workAuthorization String?
+  requiresSponsorship Boolean?
+  visaStatus       String?
+
+  // Employment
+  currentEmployer  String?
+  currentTitle     String?
+  yearsExperience  Int?
+
+  // Education
+  highestEducation String?   // e.g. Bachelor's, Master's
+  school           String?
+  degree           String?
+  major            String?
+  graduationYear   String?
+
+  // Logistics / preferences that appear on application forms
+  willingToRelocate Boolean?
+  noticePeriod     String?
+  availabilityToStart String?
+  desiredSalary    String?
+  coverLetterPreference String?  // always | when_requested | never
+
+  // Sourcing
+  howHeard         String?
+  referralName     String?
+  referralSource   String?
+
+  // EEO / voluntary self-identification (stored only if the user provides them;
+  // intentionally NOT auto-filled as standard fields — surfaced for the user).
+  gender           String?
+  raceEthnicity    String?
+  veteranStatus    String?
+  disabilityStatus String?
+
+  // Consent
+  consentToDataProcessing Boolean @default(false)
+  consentAt        DateTime?
+
+  // Free-form summary + parsed-resume structured blocks
   summary          String?  @db.Text
   skillsJson       Json     @default("[]")
   educationJson    Json     @default("[]")
@@ -108,6 +170,39 @@ model ResumeVersion {
   fileUrl    String
   notes      String?
   createdAt  DateTime @default(now())
+}
+
+// ─── Artifact storage ─────────────────────────────────────────────────────────
+// Generated document bytes (tailored resumes, packages, …) stored in-DB so the
+// product needs no external object store: files survive container restarts and
+// the whole app is a single Postgres. `key` is the addressable storage key
+// (e.g. applications/<userId>/<jobId>/tailored_resume.docx) served via /api/files.
+model Artifact {
+  key       String   @id
+  userId    String?
+  mimeType  String
+  data      Bytes
+  size      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+// Append-only record of sensitive account-level operations (data export, account
+// deletion, …). `userId` is a bare string with NO foreign key on purpose, so the
+// entry SURVIVES the user's own deletion — a defensible GDPR deletion trail.
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  detail    String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action])
 }
 
 // ─── Jobs ────────────────────────────────────────────────────────────────────
@@ -283,6 +378,7 @@ model Application {
   hiringManagerEmail     String?
   submissionConfirmation String?
   failureReason          String?
+  retryCount             Int               @default(0)
   followUpDate           DateTime?
   notes                  String?           @db.Text
   appliedAt              DateTime?
@@ -293,19 +389,32 @@ model Application {
   contacts               RecruiterContact[]
   events                 ApplicationEvent[]
   usageEvents            AIUsageEvent[]
+
+  // Backs the monthly-usage / status aggregations in usage-limits + billing.
+  @@index([userId, status, createdAt])
 }
 
 enum ApplicationStatus {
   DISCOVERED
   SHORTLISTED
+  MATCHED
   GENERATED
+  TAILORED_RESUME_READY
   NEEDS_APPROVAL
   APPROVED
+  APPLICATION_STARTED
+  FORM_FILLED_READY_TO_SUBMIT
+  READY_FOR_USER_SUBMIT
   APPLIED
   ASSISTED_REQUIRED
+  CAPTCHA_REQUIRED
+  LOGIN_REQUIRED
+  QUESTION_NEEDS_REVIEW
   DRAFT_ONLY
   DECLINED
   FAILED
+  FAILED_TECHNICAL
+  SKIPPED_UNSUPPORTED
   ARCHIVED
   FOLLOW_UP_DUE
 }
@@ -314,9 +423,10 @@ model ApplicationDocument {
   id            String      @id @default(cuid())
   applicationId String
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  type          String
+  type          String      // resume | cover_letter | qa_answers | cold_email | application_package
   fileUrl       String?
   content       String?     @db.Text
+  metadataJson  Json?       // structured side-data, e.g. the ATS match analysis for a tailored resume
   version       Int         @default(1)
   createdAt     DateTime    @default(now())
 }
@@ -371,6 +481,10 @@ model AIUsageEvent {
   cacheReadTokens  Int             @default(0)
   estimatedCostUsd Float           @default(0)
   createdAt        DateTime        @default(now())
+
+  // Back the billing aggregations: per-user/time and company-wide/time scans.
+  @@index([userId, createdAt])
+  @@index([createdAt])
 }
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
@@ -381,6 +495,7 @@ model Plan {
   slug                 String   @unique
   priceMonthly         Float
   priceYearly          Float?
+  applicationsPerDay   Int      @default(10)
   applicationsPerMonth Int
   tailoringsPerMonth   Int
   automationEnabled    Boolean  @default(false)

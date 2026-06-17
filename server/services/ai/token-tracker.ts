@@ -1,4 +1,3 @@
-import type { Usage } from "@anthropic-ai/sdk/resources/messages.js";
 import { PRICE_PER_MTOK, FALLBACK_PRICE } from "./model-config.js";
 
 export interface TokenSummary {
@@ -10,7 +9,16 @@ export interface TokenSummary {
   estimatedCostUSD: number;
 }
 
-export function summarizeUsage(model: string, usage: Usage): TokenSummary {
+// Provider-agnostic usage shape. Anthropic's `response.usage` satisfies this
+// structurally; the OpenAI-compatible provider maps prompt/completion tokens in.
+export interface UsageLike {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+}
+
+export function summarizeUsage(model: string, usage: UsageLike): TokenSummary {
   const prices = PRICE_PER_MTOK[model] ?? FALLBACK_PRICE;
   const inputTokens = usage.input_tokens;
   const outputTokens = usage.output_tokens;

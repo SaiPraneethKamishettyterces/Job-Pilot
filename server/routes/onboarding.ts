@@ -36,6 +36,9 @@ onboardingRouter.post("/complete", requireAuth, asyncHandler(async (req: AuthReq
   const userExists = await userRepository.exists(userId);
   if (!userExists) throw unauthorized("Session is no longer valid. Please log in again.");
 
+  // Generic profile fields (identity, address, work auth, employment, education,
+  // logistics, sourcing, EEO, consent) are persisted on the profile; preferences
+  // below. Role-specific answers are handled per-application, not here.
   await upsertProfile(userId, {
     fullName: data.fullName,
     phone: data.phone,
@@ -45,6 +48,38 @@ onboardingRouter.post("/complete", requireAuth, asyncHandler(async (req: AuthReq
     portfolioUrl: data.portfolioUrl,
     workAuthorization: data.workAuthorization,
     yearsExperience: data.yearsExperience,
+    legalFirstName: data.legalFirstName,
+    legalLastName: data.legalLastName,
+    preferredName: data.preferredName,
+    addressLine1: data.addressLine1,
+    addressLine2: data.addressLine2,
+    city: data.city,
+    state: data.state,
+    zipCode: data.zipCode,
+    country: data.country,
+    personalWebsite: data.personalWebsite,
+    requiresSponsorship: data.requiresSponsorship,
+    visaStatus: data.visaStatus,
+    currentEmployer: data.currentEmployer,
+    currentTitle: data.currentTitle,
+    highestEducation: data.highestEducation,
+    school: data.school,
+    degree: data.degree,
+    major: data.major,
+    graduationYear: data.graduationYear,
+    willingToRelocate: data.willingToRelocate,
+    noticePeriod: data.noticePeriod,
+    availabilityToStart: data.availabilityToStart,
+    desiredSalary: data.desiredSalary,
+    coverLetterPreference: data.coverLetterPreference,
+    howHeard: data.howHeard,
+    referralName: data.referralName,
+    referralSource: data.referralSource,
+    gender: data.gender,
+    raceEthnicity: data.raceEthnicity,
+    veteranStatus: data.veteranStatus,
+    disabilityStatus: data.disabilityStatus,
+    consentToDataProcessing: data.consentToDataProcessing,
   });
 
   await upsertPreferences(userId, {

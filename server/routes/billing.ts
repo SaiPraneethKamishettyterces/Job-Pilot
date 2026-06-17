@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { asyncHandler } from "../lib/async-handler.js";
 import { prisma } from "../lib/db.js";
+import { config } from "../lib/config.js";
 
 export const billingRouter = Router();
+
+const round2 = (n: number) => parseFloat(n.toFixed(2));
 
 function dateRanges() {
   const now = new Date();
@@ -29,8 +32,8 @@ const FEATURE_TO_STEP: Record<string, string> = {
 
 // ─── GET /api/billing/company ─────────────────────────────────────────────────
 // Company-wide executive cost metrics sourced from PostgreSQL (AIUsageEvent).
-// GCP cloud costs are flagged as backlog — BigQuery mart is available but not
-// yet connected to this backend service.
+// Scope: Claude AI spend + platform usage only. Cloud/infra cost reporting
+// belongs to the separate data-platform product, not this app-tier service.
 billingRouter.get("/company", asyncHandler(async (_req, res) => {
   const { todayStart, weekStart, monthStart, thirtyDaysAgo } = dateRanges();
 
@@ -162,21 +165,57 @@ billingRouter.get("/company", asyncHandler(async (_req, res) => {
         avgCostPerApplication:
           totalApplications > 0 ? parseFloat((totalCost / totalApplications).toFixed(4)) : 0,
       },
-      // GCP billing data lives in BigQuery (mart_billing_daily, mart_billing_monthly)
-      // but this backend has no BigQuery client configured yet.
-      cloud: {
-        status: "not_connected" as const,
-        dataAvailableAt: "BigQuery: gcpmultiverse-fnb-dev.fnb_gold.mart_billing_daily",
-        backlogItems: [
-          "Add @google-cloud/bigquery client to backend",
-          "Query mart_billing_daily for Cloud Run + Cloud SQL costs",
-          "Query mart_billing_monthly for GCP hosting cost trends",
-          "Set up billing export for gcpmultiverse-fnb-prod (currently dev only)",
-          "Add per-service cost breakdown (Cloud Run, Cloud SQL, BigQuery, Pub/Sub)",
-        ],
-      },
     });
   }
+}));
+
+// ─── GET /api/billing/financials ──────────────────────────────────────────────
+// Company financials: MRR/ARR by tier, costs (AI + infra estimate), gross margin,
+// and per-user economics. Revenue from active subscriptions; AI cost from
+// AIUsageEvent; infra from the configured monthly estimate (INFRA_MONTHLY_USD).
+billingRouter.get("/financials", asyncHandler(async (_req, res) => {
+  const { monthStart } = dateRanges();
+  const [activeSubs, aiMonth, aiAllTime] = await Promise.all([
+    prisma.subscription.findMany({ where: { status: "active" }, include: { plan: true } }),
+    prisma.aIUsageEvent.aggregate({ where: { createdAt: { gte: monthStart } }, _sum: { estimatedCostUsd: true } }),
+    prisma.aIUsageEvent.aggregate({ _sum: { estimatedCostUsd: true } }),
+  ]);
+
+  const activeSubscribers = activeSubs.length;
+  const mrr = activeSubs.reduce((s, sub) => s + (sub.plan?.priceMonthly ?? 0), 0);
+
+  const planMap: Record<string, { plan: string; priceMonthly: number; subscribers: number; mrr: number }> = {};
+  for (const sub of activeSubs) {
+    const name = sub.plan?.name ?? "Unknown";
+    if (!planMap[name]) planMap[name] = { plan: name, priceMonthly: sub.plan?.priceMonthly ?? 0, subscribers: 0, mrr: 0 };
+    planMap[name].subscribers += 1;
+    planMap[name].mrr += sub.plan?.priceMonthly ?? 0;
+  }
+
+  const aiCostThisMonth = aiMonth._sum.estimatedCostUsd ?? 0;
+  const infraMonthly = config.billing.infraMonthlyUsd;
+  const totalCostThisMonth = aiCostThisMonth + infraMonthly;
+  const grossProfit = mrr - totalCostThisMonth;
+
+  res.json({
+    revenue: { mrr: round2(mrr), arr: round2(mrr * 12), activeSubscribers },
+    byPlan: Object.values(planMap).map((p) => ({ ...p, mrr: round2(p.mrr) })),
+    costs: {
+      aiThisMonth: round2(aiCostThisMonth),
+      aiAllTime: round2(aiAllTime._sum.estimatedCostUsd ?? 0),
+      infraMonthly: round2(infraMonthly),
+      totalThisMonth: round2(totalCostThisMonth),
+    },
+    margin: {
+      grossProfit: round2(grossProfit),
+      marginPct: mrr > 0 ? round2((grossProfit / mrr) * 100) : 0,
+    },
+    perUser: {
+      arpu: activeSubscribers > 0 ? round2(mrr / activeSubscribers) : 0,
+      aiCostPerActiveUser: activeSubscribers > 0 ? round2(aiCostThisMonth / activeSubscribers) : 0,
+      totalCostPerActiveUser: activeSubscribers > 0 ? round2(totalCostThisMonth / activeSubscribers) : 0,
+    },
+  });
 }));
 
 // ─── GET /api/billing/users ───────────────────────────────────────────────────

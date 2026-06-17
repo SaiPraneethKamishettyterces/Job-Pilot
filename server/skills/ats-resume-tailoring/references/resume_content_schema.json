@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TailoredResumeContent",
+  "description": "Structured tailored-resume content emitted by the skill and consumed by render_resume.py. Content only — no typography.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contact", "professional_summary", "technical_skills", "experience", "education"],
+  "properties": {
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "description": "Unchanged from base resume." },
+        "location": { "type": "string", "description": "City, State. Unchanged." },
+        "phone": { "type": "string", "description": "Unchanged." },
+        "email": { "type": "string", "description": "Unchanged." },
+        "links": {
+          "type": "array",
+          "description": "LinkedIn / GitHub / Portfolio, plain URLs. Unchanged.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "professional_summary": {
+      "type": "string",
+      "description": "3-4 lines, role-specific, recruiter-friendly, truthful."
+    },
+    "technical_skills": {
+      "type": "array",
+      "description": "Job-relevant skill categories (compact).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "items"],
+        "properties": {
+          "category": { "type": "string", "description": "e.g. 'Programming & Querying'." },
+          "items": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "company", "dates", "bullets"],
+        "properties": {
+          "title": { "type": "string", "description": "Unchanged or slightly optimized (see rules)." },
+          "company": { "type": "string", "description": "Unchanged." },
+          "location": { "type": "string", "description": "Unchanged." },
+          "dates": { "type": "string", "description": "Unchanged, verbatim." },
+          "bullets": {
+            "type": "array",
+            "description": "4-6 for most recent role, 3-5 for older. Action verb + work + tools + outcome.",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "bullets"],
+        "properties": {
+          "name": { "type": "string" },
+          "tools": { "type": "array", "items": { "type": "string" } },
+          "bullets": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["degree", "institution"],
+        "properties": {
+          "degree": { "type": "string", "description": "Unchanged." },
+          "institution": { "type": "string", "description": "Unchanged." },
+          "location": { "type": "string" },
+          "dates": { "type": "string", "description": "Unchanged, verbatim." },
+          "details": { "type": "string", "description": "GPA/coursework. Minor keyword alignment only." }
+        }
+      }
+    },
+    "certifications": {
+      "type": "array",
+      "description": "Optional. Verbatim from base resume.",
+      "items": { "type": "string" }
+    }
+  }
+}

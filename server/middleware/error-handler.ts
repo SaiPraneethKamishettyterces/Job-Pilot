@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { AppError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
+import { captureException } from "../lib/error-reporter.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -41,9 +42,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
     return;
   }
 
-  logger.error(
-    { err: message, stack: err instanceof Error ? err.stack : undefined, path: req.path },
-    "Unhandled server error",
-  );
+  // Unexpected/unhandled → route through the error-reporting seam (the place a
+  // real tracker like Sentry plugs in).
+  captureException(err, { path: req.path, method: req.method });
   res.status(500).json({ message: isProd ? "Internal server error" : message });
 };

@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { StepBasicDetails } from "./steps/step-basic-details";
+import { StepApplicationDetails } from "./steps/step-application-details";
 import { StepResumeUpload } from "./steps/step-resume-upload";
 import { StepTargetRoles } from "./steps/step-target-roles";
 import { StepPreferences } from "./steps/step-preferences";
@@ -14,6 +15,7 @@ import type { OnboardingFormData } from "@/types";
 
 const STEPS = [
   { label: "Basic Details", description: "Tell us about yourself" },
+  { label: "Application Details", description: "Standard questions, answered once" },
   { label: "Resume", description: "Upload your resume" },
   { label: "Target Roles", description: "What are you looking for?" },
   { label: "Preferences", description: "Location and salary" },
@@ -143,10 +145,11 @@ export function OnboardingPage() {
           </div>
 
           {step === 0 && <StepBasicDetails data={formData} onChange={update} />}
-          {step === 1 && <StepResumeUpload data={formData} onChange={update} onParsed={update} />}
-          {step === 2 && <StepTargetRoles data={formData} onChange={update} />}
-          {step === 3 && <StepPreferences data={formData} onChange={update} />}
-          {step === 4 && <StepApplicationRules data={formData} onChange={update} />}
+          {step === 1 && <StepApplicationDetails data={formData} onChange={update} />}
+          {step === 2 && <StepResumeUpload data={formData} onChange={update} onParsed={update} />}
+          {step === 3 && <StepTargetRoles data={formData} onChange={update} />}
+          {step === 4 && <StepPreferences data={formData} onChange={update} />}
+          {step === 5 && <StepApplicationRules data={formData} onChange={update} />}
         </div>
 
         {/* Navigation */}

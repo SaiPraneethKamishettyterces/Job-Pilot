@@ -100,7 +100,7 @@ export function RunsPage() {
   const isActive = subQuery.data?.status === "active";
 
   const activateMut = useMutation({
-    mutationFn: activateSubscription,
+    mutationFn: () => activateSubscription(),
     onSuccess: (res) => {
       toast.success(`Subscription active — ingestion started (${res.run.id.slice(0, 8)}…)`);
       qc.invalidateQueries({ queryKey: ["subscription"] });

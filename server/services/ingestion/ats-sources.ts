@@ -5,10 +5,12 @@
 // require scraping. No LinkedIn/Indeed scraping here.
 import { logger } from "../../lib/logger.js";
 
+export type AtsType = "greenhouse" | "lever" | "ashby" | "workable";
+
 // A raw job as returned by an ATS adapter, before normalization into T2 shape.
 export type RawJob = {
-  source: "greenhouse" | "lever";
-  atsPlatform: "greenhouse" | "lever";
+  source: AtsType;
+  atsPlatform: AtsType;
   sourceJobId: string;
   title: string;
   company: string;
@@ -136,9 +138,98 @@ export async function fetchLever(token: string): Promise<RawJob[]> {
   }));
 }
 
+// ─── Ashby ───────────────────────────────────────────────────────────────────
+// https://api.ashbyhq.com/posting-api/job-board/{org}  (public, no auth)
+
+type AshbyJob = {
+  id: string;
+  title?: string;
+  department?: string;
+  team?: string;
+  employmentType?: string;
+  location?: string;
+  isRemote?: boolean;
+  descriptionPlain?: string;
+  descriptionHtml?: string;
+  publishedAt?: string;
+  jobUrl?: string;
+  applyUrl?: string;
+};
+
+export async function fetchAshby(token: string): Promise<RawJob[]> {
+  const url = `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(token)}?includeCompensation=true`;
+  const data = await getJson<{ jobs?: AshbyJob[] }>(url);
+  if (!data?.jobs?.length) return [];
+
+  return data.jobs.map((j) => ({
+    source: "ashby" as const,
+    atsPlatform: "ashby" as const,
+    sourceJobId: String(j.id),
+    title: j.title?.trim() ?? "Untitled",
+    company: token,
+    locationRaw: j.location ?? null,
+    department: j.department ?? j.team ?? null,
+    descriptionText: j.descriptionPlain?.trim() || (j.descriptionHtml ? stripHtml(j.descriptionHtml) : ""),
+    jobUrl: j.jobUrl ?? null,
+    applyUrl: j.applyUrl ?? j.jobUrl ?? null,
+    postedAt: j.publishedAt ?? null,
+    workplaceType: j.isRemote ? "remote" : null,
+    commitment: j.employmentType ?? null,
+    raw: j,
+  }));
+}
+
+// ─── Workable ────────────────────────────────────────────────────────────────
+// https://apply.workable.com/api/v1/widget/accounts/{account}?details=true (public)
+
+type WorkableJob = {
+  id?: string | number;
+  shortcode?: string;
+  title?: string;
+  employment_type?: string;
+  telecommuting?: boolean;
+  department?: string;
+  url?: string;
+  application_url?: string;
+  shortlink?: string;
+  location?: { city?: string; region?: string; country?: string; telecommuting?: boolean };
+  created_at?: string;
+  description?: string;
+  requirements?: string;
+};
+
+export async function fetchWorkable(token: string): Promise<RawJob[]> {
+  const url = `https://apply.workable.com/api/v1/widget/accounts/${encodeURIComponent(token)}?details=true`;
+  const data = await getJson<{ jobs?: WorkableJob[] }>(url);
+  if (!data?.jobs?.length) return [];
+
+  return data.jobs.map((j) => {
+    const loc = j.location
+      ? [j.location.city, j.location.region, j.location.country].filter(Boolean).join(", ") || null
+      : null;
+    const body = [j.description, j.requirements].filter(Boolean).join("\n\n");
+    return {
+      source: "workable" as const,
+      atsPlatform: "workable" as const,
+      sourceJobId: String(j.shortcode ?? j.id ?? j.title ?? "unknown"),
+      title: j.title?.trim() ?? "Untitled",
+      company: token,
+      locationRaw: loc,
+      department: j.department ?? null,
+      descriptionText: body ? stripHtml(body) : "",
+      jobUrl: j.url ?? j.shortlink ?? null,
+      applyUrl: j.application_url ?? j.url ?? null,
+      postedAt: j.created_at ?? null,
+      workplaceType: j.telecommuting || j.location?.telecommuting ? "remote" : null,
+      commitment: j.employment_type ?? null,
+      raw: j,
+    };
+  });
+}
+
 // ─── Company → board resolution ──────────────────────────────────────────────
 
-export type BoardRef = { ats: "greenhouse" | "lever"; token: string };
+export type BoardRef = { ats: AtsType; token: string };
 
 // Curated map of well-known companies to their public board tokens, so a user's
 // free-text target companies resolve to a real board. Extend as needed.
@@ -155,7 +246,57 @@ const CURATED: Record<string, BoardRef> = {
   cloudflare: { ats: "greenhouse", token: "cloudflare" },
   netflix: { ats: "lever", token: "netflix" },
   plaid: { ats: "greenhouse", token: "plaid" },
+  // Additional well-known boards.
+  reddit: { ats: "greenhouse", token: "reddit" },
+  instacart: { ats: "greenhouse", token: "instacart" },
+  brex: { ats: "greenhouse", token: "brex" },
+  ramp: { ats: "greenhouse", token: "ramp" },
+  notion: { ats: "greenhouse", token: "notion" },
+  retool: { ats: "greenhouse", token: "retool" },
+  scaleai: { ats: "lever", token: "scaleai" },
+  ramppayments: { ats: "greenhouse", token: "ramp" },
+  benchling: { ats: "greenhouse", token: "benchling" },
+  affirm: { ats: "greenhouse", token: "affirm" },
+  doordash: { ats: "greenhouse", token: "doordash" },
+  asana: { ats: "greenhouse", token: "asana" },
 };
+
+// Map common company/careers HOSTNAMES to a board, so a user who types a URL or
+// domain (e.g. "stripe.com", "https://careers.stripe.com/...") still resolves to
+// a real board instead of falling through to the slug guess.
+const DOMAIN_TO_BOARD: Record<string, BoardRef> = {
+  "stripe.com": { ats: "greenhouse", token: "stripe" },
+  "figma.com": { ats: "greenhouse", token: "figma" },
+  "databricks.com": { ats: "greenhouse", token: "databricks" },
+  "coinbase.com": { ats: "greenhouse", token: "coinbase" },
+  "gitlab.com": { ats: "greenhouse", token: "gitlab" },
+  "cloudflare.com": { ats: "greenhouse", token: "cloudflare" },
+  "netflix.com": { ats: "lever", token: "netflix" },
+  "plaid.com": { ats: "greenhouse", token: "plaid" },
+  "reddit.com": { ats: "greenhouse", token: "reddit" },
+  "notion.so": { ats: "greenhouse", token: "notion" },
+  "doordash.com": { ats: "greenhouse", token: "doordash" },
+  "asana.com": { ats: "greenhouse", token: "asana" },
+};
+
+// Extract a bare hostname from a free-text entry that may be a URL, a domain, or
+// neither. Returns null when the entry doesn't look like a domain/URL.
+function extractHost(entry: string): string | null {
+  const trimmed = entry.trim().toLowerCase();
+  if (!trimmed) return null;
+  let host: string | null = null;
+  if (/^https?:\/\//.test(trimmed)) {
+    try {
+      host = new URL(trimmed).hostname;
+    } catch {
+      host = null;
+    }
+  } else if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(trimmed)) {
+    host = trimmed;
+  }
+  if (!host) return null;
+  return host.replace(/^www\./, "").replace(/^(careers|jobs|boards|apply|job-boards)\./, "");
+}
 
 // Default boards used when the user has no target companies (or none resolve),
 // so an ingestion run still returns real jobs in the base version.
@@ -187,14 +328,24 @@ export function resolveBoards(targetCompanies: string[]): BoardRef[] {
   };
 
   for (const company of targetCompanies) {
-    const slug = slugify(company);
+    // If the entry is a URL/domain, resolve it via the careers-domain map first.
+    const host = extractHost(company);
+    if (host && DOMAIN_TO_BOARD[host]) {
+      add(DOMAIN_TO_BOARD[host]);
+      continue;
+    }
+
+    // For an unmapped host, use its first label (acme.com → "acme") as the slug.
+    const slug = slugify(host ? host.split(".")[0]! : company);
     if (!slug) continue;
     if (CURATED[slug]) {
       add(CURATED[slug]);
     } else {
-      // Unknown company: try both platforms with the slug; adapters fail soft.
+      // Unknown company: try the public no-login boards with the slug; adapters
+      // fail soft (404 → empty), so we cast a wide net across providers.
       add({ ats: "greenhouse", token: slug });
       add({ ats: "lever", token: slug });
+      add({ ats: "ashby", token: slug });
     }
   }
 
@@ -203,5 +354,14 @@ export function resolveBoards(targetCompanies: string[]): BoardRef[] {
 }
 
 export async function fetchBoard(ref: BoardRef): Promise<RawJob[]> {
-  return ref.ats === "greenhouse" ? fetchGreenhouse(ref.token) : fetchLever(ref.token);
+  switch (ref.ats) {
+    case "greenhouse":
+      return fetchGreenhouse(ref.token);
+    case "lever":
+      return fetchLever(ref.token);
+    case "ashby":
+      return fetchAshby(ref.token);
+    case "workable":
+      return fetchWorkable(ref.token);
+  }
 }

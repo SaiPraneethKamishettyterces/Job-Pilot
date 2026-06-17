@@ -12,6 +12,62 @@ Built as a **modular monolith** (React + Express) designed to scale into microse
 
 ---
 
+## End-to-end application pipeline
+
+JobPilot now runs the complete workflow end-to-end. The Python `Job_applying_agent`
+engine has been merged in (re-implemented in TypeScript — see
+[docs/MERGE_ANALYSIS.md](docs/MERGE_ANALYSIS.md)):
+
+0. **Onboard** — the user fills profile + preferences and an **Application Details**
+   step that captures the generic questions every ATS asks (legal/preferred name,
+   address, work auth + sponsorship, employment, education, logistics, sourcing,
+   optional EEO, consent) **once** — stored on `UserProfile` and reused on every
+   application. Role-specific answers are handled per-application (`ApplicationAnswer`).
+1. **Discover** — `POST /api/runs/start` (or a paid subscription activation) kicks off
+   the pipeline worker (`server/workers/application-pipeline.ts`): ingest jobs from
+   public ATS boards (Greenhouse/Lever). Autofill + platform detection also cover
+   **Ashby** and **Workable** (`server/services/automation/`).
+2. **Score** — each job is scored against the candidate (`matching/match-scorer`).
+3. **Generate** — for shortlisted jobs an `Application` is created and its documents
+   are generated (`services/application/application-generator.ts`):
+   - **Tailored resume** via the bundled `ats-resume-tailoring` skill
+     (`server/skills/`) — Claude emits structured JSON, validated, then rendered to a
+     deterministic ATS-safe **DOCX** (`services/resume/`). Verified personal info is
+     force-applied so it can never be altered.
+   - **Cover letter** and **cold email** (`services/application/outreach.ts`).
+   - **Q&A answers** with sensitivity gates (`services/application/qa-generator.ts`):
+     custom answers → profile fields → AI (generic only) → escalate to the user.
+   - **Autofill package** (`services/application/application-package.ts`): the
+     field-selector contract the browser extension / automation consumes.
+4. **Approve** — the Review queue surfaces generated documents; the user approves,
+   edits, or declines (`/api/applications/:id/{generate,approve,decline,answers}`).
+5. **Submit** — `POST /api/applications/:id/submit` drives Playwright
+   (`services/automation/form-filler.ts`) to autofill the live form.
+
+**Safety model (preserved from the engine):** nothing is auto-submitted by default.
+`AUTO_SUBMIT=false` fills the form and leaves it for the user to review + submit;
+CAPTCHA / login / OTP blockers and unsupported ATS are surfaced as
+`ASSISTED_REQUIRED`, never bypassed. Every Claude call is cost-tracked to
+`AIUsageEvent`.
+
+### Additional env vars
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MAX_UPLOAD_MB` | `8` | Max upload size for resume files. Generated documents are stored in Postgres (the `Artifact` table) and served via the auth'd `/api/files` route — no external object store. See `services/storage/artifact-storage.ts`. |
+| `AUTO_SUBMIT` | `false` | Whether the automation actually clicks submit. Off = prepare-only. |
+
+> Playwright browsers are required only for the submit step. Install with
+> `npx playwright install chromium` (the deploy image should add them); if absent,
+> submit gracefully returns `ASSISTED_REQUIRED`.
+
+> **Repo note:** the unused `infra/` Terraform was removed from the active workflow
+> (recoverable from git history) pending the productionization phase. `Dockerfile`,
+> `cloudbuild.yaml`, and `.github/workflows` are retained for that step. See
+> [docs/AUDIT.md](docs/AUDIT.md) for the full audit + prioritized TODO.
+
+---
+
 ## Screenshots
 
 | Login | Onboarding | Dashboard |

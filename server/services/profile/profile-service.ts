@@ -1,7 +1,48 @@
 import { prisma } from "../../lib/db.js";
 
+// Generic, reusable application fields stored once on the profile. Values may be
+// `null` (explicit clear) or `undefined` (leave as-is) for partial updates.
+type Nullable<T> = T | null | undefined;
+export type GenericProfileFields = {
+  legalFirstName?: Nullable<string>;
+  legalLastName?: Nullable<string>;
+  preferredName?: Nullable<string>;
+  addressLine1?: Nullable<string>;
+  addressLine2?: Nullable<string>;
+  city?: Nullable<string>;
+  state?: Nullable<string>;
+  zipCode?: Nullable<string>;
+  country?: Nullable<string>;
+  personalWebsite?: Nullable<string>;
+  requiresSponsorship?: Nullable<boolean>;
+  visaStatus?: Nullable<string>;
+  currentEmployer?: Nullable<string>;
+  currentTitle?: Nullable<string>;
+  highestEducation?: Nullable<string>;
+  school?: Nullable<string>;
+  degree?: Nullable<string>;
+  major?: Nullable<string>;
+  graduationYear?: Nullable<string>;
+  willingToRelocate?: Nullable<boolean>;
+  noticePeriod?: Nullable<string>;
+  availabilityToStart?: Nullable<string>;
+  desiredSalary?: Nullable<string>;
+  coverLetterPreference?: Nullable<string>;
+  howHeard?: Nullable<string>;
+  referralName?: Nullable<string>;
+  referralSource?: Nullable<string>;
+  gender?: Nullable<string>;
+  raceEthnicity?: Nullable<string>;
+  veteranStatus?: Nullable<string>;
+  disabilityStatus?: Nullable<string>;
+  consentToDataProcessing?: boolean;
+};
+
 export type ProfileInput = {
-  fullName: string;
+  // Optional so partial-update callers (e.g. resume auto-populate, the
+  // Application Details tab) need not resend it. Profile creation paths
+  // (onboarding, full profile save) always provide it, validated upstream.
+  fullName?: string;
   phone?: string;
   location?: string;
   workAuthorization?: string;
@@ -15,7 +56,28 @@ export type ProfileInput = {
   experience?: unknown[];
   projects?: unknown[];
   certifications?: string[];
-};
+} & GenericProfileFields;
+
+// Keys of the generic block — used to pass only defined values through to Prisma.
+const GENERIC_KEYS = [
+  "legalFirstName", "legalLastName", "preferredName", "addressLine1", "addressLine2",
+  "city", "state", "zipCode", "country", "personalWebsite", "requiresSponsorship",
+  "visaStatus", "currentEmployer", "currentTitle", "highestEducation", "school",
+  "degree", "major", "graduationYear", "willingToRelocate", "noticePeriod",
+  "availabilityToStart", "desiredSalary", "coverLetterPreference", "howHeard",
+  "referralName", "referralSource", "gender", "raceEthnicity", "veteranStatus",
+  "disabilityStatus", "consentToDataProcessing",
+] as const;
+
+function pickGeneric(data: GenericProfileFields): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of GENERIC_KEYS) {
+    const v = (data as Record<string, unknown>)[k];
+    if (v !== undefined) out[k] = v;
+  }
+  if (data.consentToDataProcessing) out["consentAt"] = new Date();
+  return out;
+}
 
 export type PreferencesInput = {
   targetRoles?: string[];
@@ -35,30 +97,36 @@ export async function getProfile(userId: string) {
 }
 
 export async function upsertProfile(userId: string, data: ProfileInput) {
-  const payload = {
-    fullName: data.fullName,
-    phone: data.phone ?? null,
-    location: data.location ?? null,
-    workAuthorization: data.workAuthorization ?? null,
-    yearsExperience: data.yearsExperience ?? null,
-    linkedinUrl: data.linkedinUrl ?? null,
-    githubUrl: data.githubUrl ?? null,
-    portfolioUrl: data.portfolioUrl ?? null,
-    summary: data.summary ?? null,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    skillsJson: (data.skills ?? []) as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    educationJson: (data.education ?? []) as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    experienceJson: (data.experience ?? []) as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    projectsJson: (data.projects ?? []) as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    certificationsJson: (data.certifications ?? []) as any,
+  // Partial-update semantics: only fields the caller actually provided are
+  // written. This lets independent surfaces (Personal Info tab, Application
+  // Details tab, resume auto-populate) each save their own slice without
+  // clobbering the others. To clear a value, send null (survives JSON);
+  // `undefined` (absent key) means "leave as-is".
+  const payload: Record<string, unknown> = {};
+  const setIf = (key: string, v: unknown) => {
+    if (v !== undefined) payload[key] = v;
   };
+  setIf("fullName", data.fullName);
+  setIf("phone", data.phone);
+  setIf("location", data.location);
+  setIf("workAuthorization", data.workAuthorization);
+  setIf("yearsExperience", data.yearsExperience);
+  setIf("linkedinUrl", data.linkedinUrl);
+  setIf("githubUrl", data.githubUrl);
+  setIf("portfolioUrl", data.portfolioUrl);
+  setIf("summary", data.summary);
+  if (data.skills !== undefined) payload["skillsJson"] = data.skills;
+  if (data.education !== undefined) payload["educationJson"] = data.education;
+  if (data.experience !== undefined) payload["experienceJson"] = data.experience;
+  if (data.projects !== undefined) payload["projectsJson"] = data.projects;
+  if (data.certifications !== undefined) payload["certificationsJson"] = data.certifications;
+  Object.assign(payload, pickGeneric(data));
+
   return prisma.userProfile.upsert({
     where: { userId },
-    create: { userId, ...payload },
+    // fullName is required by the schema; callers that create a profile always
+    // pass it (validated upstream). Fall back to "" only to satisfy the type.
+    create: { userId, fullName: data.fullName ?? "", ...payload },
     update: payload,
   });
 }
