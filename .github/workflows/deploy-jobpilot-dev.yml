@@ -102,7 +102,7 @@ jobs:
             --service-account=${{ vars.CLOUD_RUN_SA_DEV }} \
             --add-cloudsql-instances=${{ vars.CLOUD_SQL_CONNECTION_DEV }} \
             --set-secrets=DATABASE_URL=jobpilot-database-url:latest,JWT_SECRET=jobpilot-jwt-secret:latest,ANTHROPIC_API_KEY=jobpilot-anthropic-api-key:latest \
-            --set-env-vars=NODE_ENV=production,GCS_BUCKET_NAME=${{ vars.GCS_RESUMES_BUCKET_DEV }},UI_ORIGIN=* \
+            --set-env-vars=NODE_ENV=production,UI_ORIGIN=* \
             --min-instances=0 \
             --max-instances=3 \
             --memory=512Mi \

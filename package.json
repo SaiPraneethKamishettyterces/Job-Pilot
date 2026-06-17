@@ -14,6 +14,7 @@
     "typecheck": "tsc -b && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node dist/server/index.js",
@@ -23,7 +24,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
-    "@google-cloud/storage": "^7.21.0",
     "@hookform/resolvers": "^5.4.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",

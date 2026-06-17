@@ -85,10 +85,9 @@ export const config = {
   },
 
   // ── Artifact storage (generated documents) ──────────────────────────────
+  // Generated document bytes are stored in Postgres (the Artifact table) — no
+  // external object store. Only the upload size cap is configurable here.
   storage: {
-    dir: optional("STORAGE_DIR"), // empty → <repo>/artifacts
-    gcsBucket: optional("GCS_BUCKET_NAME"),
-    gcpProject: optional("GCP_PROJECT"),
     maxUploadMb: num("MAX_UPLOAD_MB", 8),
   },
 
@@ -161,8 +160,6 @@ export const env = {
   DATABASE_URL: config.database.url,
   JWT_SECRET: config.auth.jwtSecret,
   NODE_ENV: config.env,
-  STORAGE_DIR: config.storage.dir,
-  GCS_BUCKET_NAME: config.storage.gcsBucket,
   AUTO_SUBMIT: config.automation.autoSubmit,
 };
 

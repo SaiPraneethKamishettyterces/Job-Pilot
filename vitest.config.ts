@@ -1,9 +1,12 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 import path from "path";
 
 // Vitest reuses the app's path aliases so tests import the same way the app
 // does. jsdom env covers component tests; pure server/shared unit tests run
 // fine under it too.
+//
+// *.integration.test.ts files need a live DB and are excluded here (CI runs this
+// config with no database). Run them with `npm run test:integration`.
 export default defineConfig({
   resolve: {
     alias: {
@@ -15,5 +18,6 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.{ts,tsx}", "server/**/*.test.ts", "shared/**/*.test.ts"],
+    exclude: [...configDefaults.exclude, "**/*.integration.test.ts"],
   },
 });

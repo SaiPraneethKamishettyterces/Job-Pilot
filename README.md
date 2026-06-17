@@ -54,7 +54,7 @@ CAPTCHA / login / OTP blockers and unsupported ATS are surfaced as
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `STORAGE_DIR` | `<repo>/artifacts` | Local-disk store for generated documents (served via the auth'd `/api/files` route). GCS-ready seam in `services/storage/artifact-storage.ts`. |
+| `MAX_UPLOAD_MB` | `8` | Max upload size for resume files. Generated documents are stored in Postgres (the `Artifact` table) and served via the auth'd `/api/files` route — no external object store. See `services/storage/artifact-storage.ts`. |
 | `AUTO_SUBMIT` | `false` | Whether the automation actually clicks submit. Off = prepare-only. |
 
 > Playwright browsers are required only for the submit step. Install with
