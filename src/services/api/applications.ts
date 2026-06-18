@@ -71,6 +71,20 @@ export async function getApplication(id: string): Promise<{ application: Applica
   return data;
 }
 
+// All generated documents across the user's applications (for the Documents view).
+export interface GeneratedDocument {
+  id: string;
+  type: "resume" | "cover_letter" | "cold_email";
+  content: string | null;
+  createdAt: string;
+  application: { id: string; company: string; roleTitle: string; status: string; jobUrl: string | null };
+}
+
+export async function getDocuments(): Promise<{ documents: GeneratedDocument[] }> {
+  const { data } = await api.get<{ documents: GeneratedDocument[] }>("/api/applications/documents");
+  return data;
+}
+
 export async function generateDocuments(
   id: string,
 ): Promise<{ applicationId: string; status: string; usedAi: boolean; warnings: string[]; documentTypes: string[] }> {

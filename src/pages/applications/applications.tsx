@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Search, Loader2, Archive, Briefcase, RefreshCw, Calendar, LayoutList } from "lucide-react";
 import { toast } from "sonner";
@@ -142,8 +143,13 @@ function AppTableHeader() {
 }
 
 export function ApplicationsPage() {
+  // Seed the status filter from the URL (?status=APPLIED) so dashboard tiles can
+  // deep-link into a pre-filtered view. Updating the dropdown keeps the URL in sync.
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const statusFilter = searchParams.get("status") ?? "ALL";
+  const setStatusFilter = (v: string) =>
+    setSearchParams(v === "ALL" ? {} : { status: v }, { replace: true });
   const [groupByDay, setGroupByDay] = useState(true);
   const queryClient = useQueryClient();
 

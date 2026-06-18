@@ -39,6 +39,32 @@ applicationsRouter.get("/", requireAuth, asyncHandler(async (req: AuthRequest, r
   res.json({ applications, total });
 }));
 
+// GET /api/applications/documents — every generated document across the user's
+// applications (tailored resumes, cover letters, cold emails), newest first, each
+// with its application context. Registered BEFORE "/:id" so "documents" is not
+// captured as an application id.
+applicationsRouter.get("/documents", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+  const docs = await prisma.applicationDocument.findMany({
+    where: {
+      application: { userId: req.userId! },
+      type: { in: ["resume", "cover_letter", "cold_email"] },
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      application: { select: { id: true, company: true, roleTitle: true, status: true, jobUrl: true } },
+    },
+  });
+  res.json({
+    documents: docs.map((d) => ({
+      id: d.id,
+      type: d.type,
+      content: d.content,
+      createdAt: d.createdAt,
+      application: d.application,
+    })),
+  });
+}));
+
 // GET /api/applications/:id — full detail incl generated documents + answers.
 applicationsRouter.get("/:id", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
   const id = req.params["id"] as string;

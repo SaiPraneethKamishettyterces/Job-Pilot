@@ -109,19 +109,27 @@ export function buildQuestionPrompt(args: {
   company?: string | null;
   jobDescription?: string | null;
   profileSummary: string;
+  resumeText?: string | null;
 }): string {
   let desc = (args.jobDescription ?? "").trim();
-  if (desc.length > 2000) desc = desc.slice(0, 2000) + " ...";
+  if (desc.length > 2500) desc = desc.slice(0, 2500) + " ...";
+  let resume = (args.resumeText ?? "").trim();
+  if (resume.length > 2500) resume = resume.slice(0, 2500) + " ...";
   return [
     `JOB TITLE: ${args.jobTitle ?? "N/A"}`,
     `COMPANY: ${args.company ?? "N/A"}`,
-    `JOB DESCRIPTION:\n${desc || "N/A"}`,
+    `JOB DESCRIPTION (what the employer wants):\n${desc || "N/A"}`,
     "",
     `CANDIDATE PROFILE:\n${args.profileSummary}`,
     "",
+    `CANDIDATE RÉSUMÉ (what the candidate actually did — ground every claim here):\n${resume || "N/A"}`,
+    "",
     `QUESTION: ${args.question}`,
     "",
-    "Answer (first person, 2-4 sentences), or NEEDS_USER_ACTION:",
+    "Instructions: Analyse the JD to see what the employer values, then the résumé to find",
+    "the candidate's most relevant, CONCRETE experience (real projects, skills, impact) that",
+    "matches it. Write a specific, honest answer connecting the two. Use only facts present",
+    "above — never invent. Answer in first person, 2-4 sentences, or reply NEEDS_USER_ACTION.",
   ].join("\n");
 }
 

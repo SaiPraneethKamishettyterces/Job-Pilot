@@ -89,6 +89,23 @@ function asObjectArray(value: unknown): Array<Record<string, unknown>> {
   return value.filter((v): v is Record<string, unknown> => typeof v === "object" && v !== null);
 }
 
+// Work authorization is no longer a free-text field on the profile editor — it was
+// deduplicated in favor of the structured `requiresSponsorship` + `visaStatus` pair
+// on the Application Details tab. Derive a human-readable string from those so the
+// match scorer and Q&A generator (which read `workAuthorization`) keep working.
+function deriveWorkAuthorization(
+  explicit: string | null | undefined,
+  visaStatus: string | null | undefined,
+  requiresSponsorship: boolean | null | undefined,
+): string | null {
+  if (explicit?.trim()) return explicit.trim(); // honor any legacy/explicit value
+  const parts: string[] = [];
+  if (visaStatus?.trim()) parts.push(visaStatus.trim());
+  if (requiresSponsorship === true) parts.push("requires visa sponsorship");
+  else if (requiresSponsorship === false) parts.push("no sponsorship required");
+  return parts.length ? parts.join(" — ") : null;
+}
+
 function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): string | null {
   if (!obj) return null;
   for (const k of keys) {
@@ -156,7 +173,9 @@ export async function loadCandidateProfile(userId: string): Promise<CandidatePro
     linkedinUrl: profile?.linkedinUrl ?? null,
     githubUrl: profile?.githubUrl ?? null,
     portfolioUrl: profile?.portfolioUrl ?? null,
-    websiteUrl: profile?.personalWebsite ?? profile?.portfolioUrl ?? null,
+    // Personal website was deduplicated into portfolioUrl on the profile editor.
+    // Prefer the canonical portfolioUrl; fall back to any legacy personalWebsite.
+    websiteUrl: profile?.portfolioUrl ?? profile?.personalWebsite ?? null,
     currentCompany: profile?.currentEmployer ?? pick(currentRole, "company", "employer"),
     currentTitle: profile?.currentTitle ?? pick(currentRole, "title", "role", "position"),
     yearsOfExperience: profile?.yearsExperience ?? null,
@@ -164,7 +183,11 @@ export async function loadCandidateProfile(userId: string): Promise<CandidatePro
     schoolName: profile?.school ?? pick(topEducation, "institution", "school", "university"),
     major: profile?.major ?? pick(topEducation, "field", "major"),
     graduationYear: profile?.graduationYear ?? pick(topEducation, "endYear", "graduationYear", "endDate"),
-    workAuthorization: profile?.workAuthorization ?? null,
+    workAuthorization: deriveWorkAuthorization(
+      profile?.workAuthorization,
+      profile?.visaStatus,
+      profile?.requiresSponsorship,
+    ),
     requiresSponsorship: profile?.requiresSponsorship ?? null,
     visaStatus: profile?.visaStatus ?? null,
     willingToRelocate: profile?.willingToRelocate ?? null,
@@ -200,7 +223,9 @@ export function effectiveFullName(p: CandidateProfile): string | null {
   return parts.length ? parts.join(" ") : null;
 }
 
-/** A compact, fact-only profile blurb for AI prompts (mirrors the Python helper). */
+/** A compact, fact-only profile blurb for AI prompts (mirrors the Python helper).
+ *  Includes a short summary + recent roles so open-ended answers ("describe your
+ *  experience", "why are you a fit") have real grounding, not just identity facts. */
 export function profileSummary(p: CandidateProfile): string {
   const bits: Array<[string, string | number | null]> = [
     ["Name", effectiveFullName(p)],
@@ -214,5 +239,22 @@ export function profileSummary(p: CandidateProfile): string {
     ["Top skills", p.skills.slice(0, 12).join(", ") || null],
   ];
   const lines = bits.filter(([, v]) => v !== null && v !== "").map(([k, v]) => `- ${k}: ${v}`);
+
+  if (p.summary?.trim()) {
+    lines.push(`- Summary: ${p.summary.trim().slice(0, 400)}`);
+  }
+
+  // Up to 3 most recent roles with a one-line description — concrete material for
+  // "tell us about your experience"-style questions. Capped to keep prompts small.
+  const recent = p.experience.slice(0, 3).map((e) => {
+    const title = pick(e, "title", "role", "position");
+    const company = pick(e, "company", "employer", "organization");
+    const desc = pick(e, "description", "summary");
+    const head = [title, company].filter(Boolean).join(" at ");
+    if (!head && !desc) return null;
+    return `  • ${head || "Role"}${desc ? ": " + desc.replace(/\s+/g, " ").slice(0, 160) : ""}`;
+  }).filter(Boolean) as string[];
+  if (recent.length) lines.push("- Recent experience:", ...recent);
+
   return lines.length ? lines.join("\n") : "- (no profile fields available)";
 }

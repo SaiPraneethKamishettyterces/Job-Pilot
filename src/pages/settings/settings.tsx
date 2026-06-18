@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Save, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,16 +11,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/lib/auth";
-import { exportAccount, deleteAccount } from "@/services/api";
+import { exportAccount, deleteAccount, getProfile, updatePreferences, type ProfileResponse } from "@/services/api";
 
 export function SettingsPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [approvalMode, setApprovalMode] = useState("ALWAYS_REVIEW");
   const [dailyDigest, setDailyDigest] = useState(true);
   const [followUpReminders, setFollowUpReminders] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Load saved preferences so the approval mode reflects what's stored (was
+  // hardcoded to ALWAYS_REVIEW and never loaded → always appeared to reset).
+  const { data: profileData } = useQuery<ProfileResponse>({ queryKey: ["profile"], queryFn: getProfile });
+  useEffect(() => {
+    const mode = profileData?.preferences?.approvalMode;
+    if (mode) setApprovalMode(mode);
+  }, [profileData?.preferences?.approvalMode]);
+
+  const saveRules = useMutation({
+    mutationFn: () => updatePreferences({ approvalMode: approvalMode as never }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      toast.success("Application rules saved");
+    },
+    onError: () => toast.error("Failed to save — please try again"),
+  });
 
   const save = () => toast.success("Settings saved");
 
@@ -112,8 +131,8 @@ export function SettingsPage() {
             <Switch checked={followUpReminders} onCheckedChange={setFollowUpReminders} />
           </div>
 
-          <Button onClick={save} size="sm">
-            <Save className="h-4 w-4" />
+          <Button onClick={() => saveRules.mutate()} size="sm" disabled={saveRules.isPending}>
+            {saveRules.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save changes
           </Button>
         </CardContent>

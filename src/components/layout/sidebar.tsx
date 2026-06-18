@@ -11,7 +11,6 @@ import {
   LogOut,
   Sparkles,
   Search,
-  Database,
   UserCircle,
   HelpCircle,
   Mail,
@@ -24,12 +23,11 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/jobs", icon: Search, label: "Jobs" },
+  { to: "/jobs", icon: Search, label: "Jobs Found" },
   { to: "/runs", icon: Play, label: "Runs" },
-  { to: "/candidates", icon: Database, label: "Candidates" },
   { to: "/applications", icon: Briefcase, label: "Applications" },
   { to: "/review", icon: CheckSquare, label: "Review Queue" },
-  { to: "/resume", icon: FileText, label: "Resume" },
+  { to: "/resume", icon: FileText, label: "Documents" },
   { to: "/profile", icon: UserCircle, label: "Profile" },
   { to: "/analytics", icon: BarChart2, label: "Analytics" },
   { to: "/activity", icon: Activity, label: "Activity" },

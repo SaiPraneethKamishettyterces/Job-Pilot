@@ -5,6 +5,7 @@ import { recordUsage } from "../ai/usage-recorder.js";
 import { logger } from "../../lib/logger.js";
 import { bestSemanticMatch, type StoredVec } from "./semantic-match.js";
 import { effectiveFullName, profileSummary, type CandidateProfile } from "../profile/candidate-profile.js";
+import { config } from "../../lib/config.js";
 
 // Answer an application question from structured data first, AI only as a last
 // resort, and refuse to answer sensitive questions we can't ground in data.
@@ -162,6 +163,29 @@ function fromProfile(question: string, p: CandidateProfile): AnswerResult | null
   return null;
 }
 
+// Binary "Have you ever been employed by / worked at <company>?" questions are
+// answerable from the candidate's actual work history: "Yes" only if the named
+// employer is among their past/current employers, otherwise "No". Never guess
+// affirmatively (claiming a job they didn't hold is a false statement).
+function fromEmploymentHistory(question: string, p: CandidateProfile): AnswerResult | null {
+  const q = question.toLowerCase();
+  if (!/\b(have|did|were|are|do)\s+you\b/.test(q)) return null;
+  if (!/(employed (by|at|with)|work(ed)?\s+(at|for)|been employed|affiliate|employee of)/.test(q)) return null;
+
+  const employers: string[] = [];
+  if (p.currentCompany) employers.push(p.currentCompany);
+  for (const e of p.experience) {
+    const c = e["company"] ?? e["employer"] ?? e["organization"];
+    if (typeof c === "string" && c.trim()) employers.push(c);
+  }
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const mentioned = employers.some((e) => {
+    const n = norm(e);
+    return n.length > 2 && q.includes(n);
+  });
+  return mk(mentioned ? "Yes" : "No", 0.9, "user_profile", "derived from employment history", false);
+}
+
 function mk(
   answer: string | null,
   confidence: number,
@@ -173,10 +197,12 @@ function mk(
 }
 
 function finalize(result: AnswerResult): AnswerResult {
+  // Threshold is env-configurable (config.qa.confidenceThreshold). Prod default
+  // 0.75 surfaces AI drafts for review; testing lowers it so drafts auto-fill.
   if (!result.answer) {
     result.needsUserAction = true;
     if (!result.reason) result.reason = "no answer produced";
-  } else if (result.confidence < CONFIDENCE_THRESHOLD) {
+  } else if (result.confidence < config.qa.confidenceThreshold) {
     result.needsUserAction = true;
     result.reason = result.reason || "low confidence";
   }
@@ -217,6 +243,10 @@ export async function answerQuestion(
   const fromProf = fromProfile(question, profile);
   if (fromProf && fromProf.answer) return finalize({ ...fromProf, isSensitive });
 
+  // 3b: employment-history yes/no, derived from the candidate's actual employers.
+  const emp = fromEmploymentHistory(question, profile);
+  if (emp) return finalize({ ...emp, isSensitive });
+
   // Sensitive question with no grounded answer → human in the loop.
   if (isSensitive) {
     return {
@@ -225,40 +255,54 @@ export async function answerQuestion(
     };
   }
 
-  // 4: AI for generic open-ended questions only.
-  if (GENERIC_PATTERNS.test(question) && hasProvider(TASK_MODEL.questionAnswer.provider)) {
-    try {
-      const { text, usage } = await completeText({
-        ...TASK_MODEL.questionAnswer,
-        maxTokens: 300,
-        system: QUESTION_SYSTEM,
-        messages: [
-          {
-            role: "user",
-            content: buildQuestionPrompt({
-              question,
-              jobTitle: ctx.jobTitle ?? null,
-              company: ctx.company ?? null,
-              jobDescription: ctx.jobDescription ?? null,
-              profileSummary: profileSummary(profile),
-            }),
-          },
-        ],
-      });
-      await recordUsage({
-        userId: ctx.userId, runId: ctx.runId ?? null, applicationId: ctx.applicationId ?? null,
-        featureName: "question_answering", usage,
-      });
-      const answer = text.trim();
-      if (!answer || answer.toUpperCase().startsWith("NEEDS_USER_ACTION")) {
-        return { answer: null, confidence: 0, source: "ai", needsUserAction: true, isSensitive: false,
-          reason: "model could not answer from available data" };
+  // 4: AI for generic open-ended questions (or ALL non-sensitive open questions
+  // when config.qa.answerAll is on, e.g. during testing). The model analyses the JD
+  // (what the employer wants) against the résumé (what the candidate did) and writes
+  // a grounded answer. If it punts with NEEDS_USER_ACTION on a question we DO have
+  // résumé grounding for, retry once with a firmer instruction (weak local models
+  // over-trigger the refusal); only then surface to the user.
+  if ((config.qa.answerAll || GENERIC_PATTERNS.test(question)) && hasProvider(TASK_MODEL.questionAnswer.provider)) {
+    const hasResume = Boolean(profile.baseResumeText && profile.baseResumeText.trim().length > 50);
+    const basePrompt = buildQuestionPrompt({
+      question,
+      jobTitle: ctx.jobTitle ?? null,
+      company: ctx.company ?? null,
+      jobDescription: ctx.jobDescription ?? null,
+      profileSummary: profileSummary(profile),
+      resumeText: profile.baseResumeText,
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const content = attempt === 0
+        ? basePrompt
+        : basePrompt +
+          "\n\nThe résumé above DOES contain relevant material. Do NOT reply NEEDS_USER_ACTION — " +
+          "give your best specific, honest answer grounded in the most relevant résumé experience.";
+      try {
+        const { text, usage } = await completeText({
+          ...TASK_MODEL.questionAnswer,
+          maxTokens: 300,
+          system: QUESTION_SYSTEM,
+          messages: [{ role: "user", content }],
+        });
+        await recordUsage({
+          userId: ctx.userId, runId: ctx.runId ?? null, applicationId: ctx.applicationId ?? null,
+          featureName: "question_answering", usage,
+        });
+        const answer = text.trim();
+        if (answer && !answer.toUpperCase().startsWith("NEEDS_USER_ACTION")) {
+          // AI free-text answers are inherently uncertain; cap confidence below the
+          // gate so they always surface for review.
+          return finalize(mk(answer, 0.7, "generated", "AI-drafted answer grounded in JD + résumé", false));
+        }
+        // Refused: retry only if there's résumé grounding worth a firmer second try.
+        if (!hasResume || attempt === 1) {
+          return { answer: null, confidence: 0, source: "ai", needsUserAction: true, isSensitive: false,
+            reason: "model could not answer from available data" };
+        }
+      } catch (err) {
+        logger.warn({ err: String(err) }, "question answering LLM call failed");
+        break;
       }
-      // AI free-text answers are inherently uncertain; cap confidence below the
-      // gate so they always surface for review.
-      return finalize(mk(answer, 0.7, "generated", "AI-drafted answer for a generic question", false));
-    } catch (err) {
-      logger.warn({ err: String(err) }, "question answering LLM call failed");
     }
   }
 

@@ -27,12 +27,19 @@ function ScoreBadge({ score }: { score: number }) {
   return <Badge variant={variant}>{score}%</Badge>;
 }
 
-function StatCard({ label, value, sub, icon: Icon, iconBg, isLoading }: {
+function StatCard({ label, value, sub, icon: Icon, iconBg, isLoading, onClick }: {
   label: string; value: string | number; sub: string | React.ReactNode;
-  icon: typeof Target; iconBg: string; isLoading: boolean;
+  icon: typeof Target; iconBg: string; isLoading: boolean; onClick?: () => void;
 }) {
+  const clickable = Boolean(onClick);
   return (
-    <Card className="p-5 hover:-translate-y-px">
+    <Card
+      onClick={onClick}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick!(); } } : undefined}
+      className={cn("p-5 hover:-translate-y-px", clickable && "cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/50")}
+    >
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
         <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconBg)}>
@@ -101,6 +108,7 @@ export function DashboardPage() {
           icon={Target}
           iconBg="bg-brand-blue/12 text-brand-blue-soft"
           isLoading={isLoading}
+          onClick={() => navigate("/jobs")}
         />
         <StatCard
           label="Shortlisted"
@@ -109,6 +117,7 @@ export function DashboardPage() {
           icon={TrendingUp}
           iconBg="bg-amber-500/12 text-amber-300 light:text-amber-600"
           isLoading={isLoading}
+          onClick={() => navigate("/jobs")}
         />
         <StatCard
           label="Applied"
@@ -117,30 +126,21 @@ export function DashboardPage() {
           icon={Briefcase}
           iconBg="bg-green-500/12 text-green-300 light:text-green-600"
           isLoading={isLoading}
+          onClick={() => navigate("/applications?status=APPLIED")}
         />
-        <Card className="p-5 hover:-translate-y-px">
-          <div className="flex items-center justify-between">
-            <span className="text-[13px] font-medium text-muted-foreground">Needs Review</span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-purple/14 text-brand-purple-soft">
-              <CheckSquare className="h-[18px] w-[18px]" strokeWidth={1.8} />
-            </div>
-          </div>
-          {isLoading ? (
-            <Skeleton className="mt-4 h-9 w-16" />
-          ) : (
-            <div className="mt-4 text-[34px] font-bold leading-none tracking-[-0.03em] tabular-nums">{stats?.needsApproval ?? 0}</div>
-          )}
-          {!isLoading && (stats?.needsApproval ?? 0) > 0 ? (
-            <button
-              onClick={() => navigate("/review")}
-              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-blue-soft hover:underline"
-            >
+        <StatCard
+          label="Needs Review"
+          value={stats?.needsApproval ?? 0}
+          sub={(stats?.needsApproval ?? 0) > 0 ? (
+            <span className="inline-flex items-center gap-1 font-semibold text-brand-blue-soft">
               Review now <ArrowRight className="h-3 w-3" />
-            </button>
-          ) : (
-            <div className="mt-2 text-xs text-muted-foreground">All caught up</div>
-          )}
-        </Card>
+            </span>
+          ) : "All caught up"}
+          icon={CheckSquare}
+          iconBg="bg-brand-purple/14 text-brand-purple-soft"
+          isLoading={isLoading}
+          onClick={() => navigate("/review")}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
