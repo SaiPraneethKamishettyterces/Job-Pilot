@@ -2,15 +2,22 @@ import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Upload, FileText, Loader2, Edit, User, Briefcase, GraduationCap, Code, AlertCircle } from "lucide-react";
+import { Upload, FileText, Loader2, Edit, User, Briefcase, GraduationCap, Code, AlertCircle, Mail, FileSignature, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
-import { getProfile, type ProfileResponse } from "@/services/api";
+import { getProfile, getDocuments, type ProfileResponse, type GeneratedDocument } from "@/services/api";
+
+const DOC_META: Record<GeneratedDocument["type"], { label: string; icon: typeof Mail }> = {
+  cover_letter: { label: "Cover Letter", icon: FileSignature },
+  cold_email: { label: "Cold Email", icon: Mail },
+  resume: { label: "Tailored Resume", icon: FileText },
+};
 
 export function ResumePage() {
   const { token } = useAuth();
@@ -23,6 +30,16 @@ export function ResumePage() {
     queryFn: getProfile,
   });
   const profile = data?.profile ?? null;
+
+  // Generated documents (cover letters, cold emails, tailored resumes) produced by
+  // the apply pipeline, surfaced here so the user can read/copy them.
+  const { data: docsData, isLoading: docsLoading } = useQuery({
+    queryKey: ["documents"],
+    queryFn: getDocuments,
+    staleTime: 30_000,
+  });
+  const documents = docsData?.documents ?? [];
+  const [openDoc, setOpenDoc] = useState<GeneratedDocument | null>(null);
 
   const onDrop = useCallback(async (accepted: File[]) => {
     const f = accepted[0];
@@ -96,7 +113,7 @@ export function ResumePage() {
                   <Upload className="h-6 w-6 text-muted-foreground mb-2" />
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {uploadStatus === "uploading" ? "Parsing with Claude…" : "Drop or click to upload"}
+                  {uploadStatus === "uploading" ? "Parsing your resume…" : "Drop or click to upload"}
                 </p>
                 <p className="text-xs text-muted-foreground">PDF or DOCX · Max 10 MB</p>
               </div>
@@ -118,7 +135,7 @@ export function ResumePage() {
                   Edit Profile
                 </Button>
               </div>
-              <CardDescription>Extracted from your resume by Claude AI — review before running</CardDescription>
+              <CardDescription>Extracted from your resume by AI — review before running</CardDescription>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -205,6 +222,99 @@ export function ResumePage() {
           </Card>
         </div>
       </div>
+
+      {/* ── Generated Documents ─────────────────────────────────────────────
+          Cover letters, cold emails and tailored resumes the apply pipeline
+          generated per job. */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileSignature className="h-4 w-4" />
+              Generated Documents
+            </CardTitle>
+            {documents.length > 0 && (
+              <span className="text-xs text-muted-foreground">{documents.length} document{documents.length === 1 ? "" : "s"}</span>
+            )}
+          </div>
+          <CardDescription>Cover letters, cold emails and tailored resumes created for each job application</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {docsLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="py-10 text-center">
+              <FileSignature className="h-9 w-9 text-muted-foreground mx-auto mb-3" />
+              <p className="text-sm font-medium mb-1">No documents yet</p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                Start a run and generate applications — tailored resumes, cover letters and cold emails appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {documents.map((doc) => {
+                const meta = DOC_META[doc.type];
+                const Icon = meta.icon;
+                return (
+                  <button
+                    key={doc.id}
+                    onClick={() => setOpenDoc(doc)}
+                    className="flex items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-[10px]">{meta.label}</Badge>
+                      </div>
+                      <p className="mt-1 text-sm font-medium truncate">{doc.application.roleTitle}</p>
+                      <p className="text-xs text-muted-foreground truncate">{doc.application.company}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Document viewer */}
+      <Dialog open={Boolean(openDoc)} onOpenChange={(o) => !o && setOpenDoc(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {openDoc && (() => { const I = DOC_META[openDoc.type].icon; return <I className="h-4 w-4" />; })()}
+              {openDoc ? `${DOC_META[openDoc.type].label} — ${openDoc.application.roleTitle}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {openDoc && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{openDoc.application.company}</span>
+                {openDoc.application.jobUrl && (
+                  <a href={openDoc.application.jobUrl} target="_blank" rel="noopener noreferrer"
+                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                    <ExternalLink className="h-3 w-3" /> Job posting
+                  </a>
+                )}
+              </div>
+              <div className="max-h-[55vh] overflow-y-auto rounded-lg border bg-muted/30 p-4">
+                <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{openDoc.content || "(empty)"}</pre>
+              </div>
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={() => {
+                  navigator.clipboard.writeText(openDoc.content ?? "").then(() => toast.success("Copied to clipboard"));
+                }}>
+                  <Copy className="h-4 w-4" /> Copy
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

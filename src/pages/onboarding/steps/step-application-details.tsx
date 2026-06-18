@@ -3,6 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { OnboardingFormData } from "@/types";
+import { EEO_FIELD_OPTIONS, type EeoOption } from "@/lib/eeo-options";
 
 interface Props {
   data: OnboardingFormData;
@@ -14,19 +15,42 @@ const YESNO = [
   { v: "no", b: false },
 ];
 
-// Collects the GENERIC questions that Greenhouse/Lever/Ashby/Workable ask on
-// almost every application, so the user answers them once. Role-specific
-// questions are handled per-application later.
-export function StepApplicationDetails({ data, onChange }: Props) {
-  const Field = ({ id, label, value, placeholder, onSet }: {
-    id: string; label: string; value?: string; placeholder?: string; onSet: (v: string) => void;
-  }) => (
+// Hoisted to module scope ON PURPOSE. When this lived inside StepApplicationDetails,
+// a new `Field` function identity was created on every keystroke-triggered render,
+// so React unmounted+remounted each <Input> and the field lost focus after every
+// character. A stable module-level component keeps the inputs mounted.
+function Field({ id, label, value, placeholder, onSet }: {
+  id: string; label: string; value?: string; placeholder?: string; onSet: (v: string) => void;
+}) {
+  return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} placeholder={placeholder} value={value ?? ""} onChange={(e) => onSet(e.target.value)} />
     </div>
   );
+}
 
+// Hoisted dropdown for fixed option lists (EEO). Empty value → placeholder.
+function SelectField({ id, label, value, options, onSet }: {
+  id: string; label: string; value?: string; options: EeoOption[]; onSet: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Select value={value ?? ""} onValueChange={onSet}>
+        <SelectTrigger id={id}><SelectValue placeholder="Select…" /></SelectTrigger>
+        <SelectContent>
+          {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+// Collects the GENERIC questions that Greenhouse/Lever/Ashby/Workable ask on
+// almost every application, so the user answers them once. Role-specific
+// questions are handled per-application later.
+export function StepApplicationDetails({ data, onChange }: Props) {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">
@@ -54,26 +78,10 @@ export function StepApplicationDetails({ data, onChange }: Props) {
           <Field id="zipCode" label="ZIP / Postal" value={data.zipCode} onSet={(v) => onChange({ zipCode: v })} />
           <Field id="country" label="Country" value={data.country} onSet={(v) => onChange({ country: v })} />
         </div>
-        <Field id="personalWebsite" label="Personal website" value={data.personalWebsite} placeholder="https://…" onSet={(v) => onChange({ personalWebsite: v })} />
       </section>
 
-      {/* Work authorization */}
-      <section className="space-y-4">
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Work authorization</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Require visa sponsorship?</Label>
-            <Select
-              value={data.requiresSponsorship === undefined ? "" : data.requiresSponsorship ? "yes" : "no"}
-              onValueChange={(v) => onChange({ requiresSponsorship: YESNO.find((y) => y.v === v)?.b })}
-            >
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-              <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
-            </Select>
-          </div>
-          <Field id="visaStatus" label="Visa status (if any)" value={data.visaStatus} placeholder="e.g. H-1B, OPT" onSet={(v) => onChange({ visaStatus: v })} />
-        </div>
-      </section>
+      {/* Work authorization (sponsorship + visa) is captured once in Basic Details
+          via the Work authorization dropdown — not repeated here. */}
 
       {/* Employment + education */}
       <section className="space-y-4">
@@ -120,12 +128,16 @@ export function StepApplicationDetails({ data, onChange }: Props) {
       {/* EEO (voluntary) */}
       <section className="space-y-4">
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Voluntary self-identification (EEO)</h3>
-        <p className="text-xs text-muted-foreground">Optional. Stored only if you provide it; never auto-submitted without your review.</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Field id="gender" label="Gender" value={data.gender} onSet={(v) => onChange({ gender: v })} />
-          <Field id="raceEthnicity" label="Race / ethnicity" value={data.raceEthnicity} onSet={(v) => onChange({ raceEthnicity: v })} />
-          <Field id="veteranStatus" label="Veteran status" value={data.veteranStatus} onSet={(v) => onChange({ veteranStatus: v })} />
-          <Field id="disabilityStatus" label="Disability status" value={data.disabilityStatus} onSet={(v) => onChange({ disabilityStatus: v })} />
+        <p className="text-xs text-muted-foreground">
+          Optional. If you select a value, it's used to auto-fill the matching EEO question
+          on applications. Leave any blank and we'll auto-select "Decline to self-identify".
+          Nothing is submitted without your review.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <SelectField id="gender" label="Gender" value={data.gender} options={EEO_FIELD_OPTIONS.gender!} onSet={(v) => onChange({ gender: v })} />
+          <SelectField id="raceEthnicity" label="Race / ethnicity" value={data.raceEthnicity} options={EEO_FIELD_OPTIONS.raceEthnicity!} onSet={(v) => onChange({ raceEthnicity: v })} />
+          <SelectField id="veteranStatus" label="Veteran status" value={data.veteranStatus} options={EEO_FIELD_OPTIONS.veteranStatus!} onSet={(v) => onChange({ veteranStatus: v })} />
+          <SelectField id="disabilityStatus" label="Disability status" value={data.disabilityStatus} options={EEO_FIELD_OPTIONS.disabilityStatus!} onSet={(v) => onChange({ disabilityStatus: v })} />
         </div>
       </section>
 

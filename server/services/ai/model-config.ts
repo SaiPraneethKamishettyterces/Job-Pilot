@@ -45,14 +45,25 @@ export const PRICE_PER_MTOK: Record<string, { input: number; output: number }> =
 // Fallback price when an unknown model id is seen (conservative: opus rate).
 export const FALLBACK_PRICE = { input: 5.0, output: 25.0 };
 
-// Which provider+model each task uses. Resume tailoring stays on the Claude skill
-// (quality-sensitive); everything else runs on the free Gemini-tier provider.
-//   prose (cover letter) → Gemini Pro; structured/short tasks → Gemini Flash.
+// Which provider+model each task uses.
+//
+// ─── TESTING (local Ollama) ──────────────────────────────────────────────────
+// Goal of this phase: validate the workflow/data-lineage end-to-end, NOT output
+// quality. So EVERY task runs on ONE small local model via the OpenAI-compatible
+// provider (provider:"openai" → AI_COMPAT_BASE_URL → http://localhost:11434/v1).
+// tailorResume is flipped off Claude to keep the whole pipeline local (nothing
+// hits the cloud; the "anthropic" path goes dormant with no ANTHROPIC_API_KEY).
+//
+// ─── PROD (revert) ───────────────────────────────────────────────────────────
+// Resume tailoring is quality-sensitive → Claude Sonnet. Prose (cover letter) →
+// Gemini Pro; structured/short tasks → Gemini Flash. To restore: point .env back
+// at Gemini and uncomment the original tailorResume line below.
 export const TASK_MODEL: Record<
   "coverLetter" | "resumeParse" | "jobParse" | "matchScore" | "tailorResume" | "coldEmail" | "questionAnswer",
   TaskModel
 > = {
-  tailorResume: { provider: "anthropic", model: MODELS.sonnet },
+  // PROD: tailorResume: { provider: "anthropic", model: MODELS.sonnet },
+  tailorResume: { provider: "openai", model: COMPAT_MODELS.flash }, // TESTING: local model
   coverLetter: { provider: "openai", model: COMPAT_MODELS.pro },
   resumeParse: { provider: "openai", model: COMPAT_MODELS.flash },
   jobParse: { provider: "openai", model: COMPAT_MODELS.flash },

@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { EEO_FIELD_OPTIONS, type EeoOption } from "@/lib/eeo-options";
 import {
   getProfile,
   updateProfile,
@@ -88,11 +89,12 @@ function PersonalInfoTab({
   onSave: (data: Partial<UserProfile>) => void;
   isSaving: boolean;
 }) {
+  // NOTE: location and workAuthorization are intentionally NOT edited here — they
+  // live on the Application Details tab (address parts + sponsorship/visa) to avoid
+  // duplicate inputs. candidate-profile derives both from those canonical fields.
   const [form, setForm] = useState({
     fullName: profile?.fullName ?? "",
     phone: profile?.phone ?? "",
-    location: profile?.location ?? "",
-    workAuthorization: profile?.workAuthorization ?? "",
     yearsExperience: profile?.yearsExperience?.toString() ?? "",
     linkedinUrl: profile?.linkedinUrl ?? "",
     githubUrl: profile?.githubUrl ?? "",
@@ -110,8 +112,6 @@ function PersonalInfoTab({
       setForm({
         fullName: profile.fullName ?? "",
         phone: profile.phone ?? "",
-        location: profile.location ?? "",
-        workAuthorization: profile.workAuthorization ?? "",
         yearsExperience: profile.yearsExperience?.toString() ?? "",
         linkedinUrl: profile.linkedinUrl ?? "",
         githubUrl: profile.githubUrl ?? "",
@@ -134,8 +134,6 @@ function PersonalInfoTab({
     onSave({
       fullName: form.fullName,
       phone: form.phone || undefined,
-      location: form.location || undefined,
-      workAuthorization: form.workAuthorization || undefined,
       yearsExperience: form.yearsExperience ? parseInt(form.yearsExperience) : undefined,
       linkedinUrl: form.linkedinUrl || undefined,
       githubUrl: form.githubUrl || undefined,
@@ -157,10 +155,6 @@ function PersonalInfoTab({
           <Input id="phone" value={form.phone} onChange={set("phone")} placeholder="+1 (555) 000-0000" />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="location">Location</Label>
-          <Input id="location" value={form.location} onChange={set("location")} placeholder="San Francisco, CA" />
-        </div>
-        <div className="space-y-1.5">
           <Label htmlFor="yearsExp">Years of Experience</Label>
           <Input
             id="yearsExp"
@@ -170,15 +164,6 @@ function PersonalInfoTab({
             value={form.yearsExperience}
             onChange={set("yearsExperience")}
             placeholder="5"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="workAuth">Work Authorization</Label>
-          <Input
-            id="workAuth"
-            value={form.workAuthorization}
-            onChange={set("workAuthorization")}
-            placeholder="US Citizen / H1-B / OPT / EAD…"
           />
         </div>
         <div className="space-y-1.5">
@@ -419,7 +404,7 @@ function PreferencesTab({
 
 const GENERIC_TEXT_KEYS = [
   "legalFirstName", "legalLastName", "preferredName",
-  "addressLine1", "addressLine2", "city", "state", "zipCode", "country", "personalWebsite",
+  "addressLine1", "addressLine2", "city", "state", "zipCode", "country",
   "visaStatus", "currentEmployer", "currentTitle",
   "highestEducation", "school", "degree", "major", "graduationYear",
   "noticePeriod", "availabilityToStart", "desiredSalary", "coverLetterPreference",
@@ -434,6 +419,75 @@ function triToSelect(v: boolean | undefined): string {
 }
 function selectToTri(v: string): boolean | undefined {
   return v === "" ? undefined : v === "yes";
+}
+
+// Defined at module scope (NOT inside ApplicationDetailsTab). A component declared
+// inside another component gets a brand-new identity on every parent render, so
+// React unmounts/remounts its <input> on each keystroke — the field loses focus
+// after a single character. Hoisting them keeps the input mounted across renders.
+function TextField({
+  id, label, placeholder, value, onChange,
+}: {
+  id: string;
+  label: string;
+  placeholder?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+// Hoisted (stable identity) dropdown for fixed option lists (e.g. EEO). An empty
+// value means "not provided" — rendered as the placeholder.
+function SelectField({
+  id, label, value, options, placeholder, onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: EeoOption[];
+  placeholder?: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger id={id}><SelectValue placeholder={placeholder ?? "Select…"} /></SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function YesNoField({
+  label, value, onChange,
+}: {
+  label: string;
+  value: boolean | undefined;
+  onChange: (b: boolean | undefined) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <Select value={triToSelect(value)} onValueChange={(v) => onChange(selectToTri(v))}>
+        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="yes">Yes</SelectItem>
+          <SelectItem value="no">No</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
 }
 
 function ApplicationDetailsTab({
@@ -464,6 +518,12 @@ function ApplicationDetailsTab({
   }, [profile]);
 
   const set = (k: GenericTextKey) => (v: string) => setText((t) => ({ ...t, [k]: v }));
+  // Thin adapter so call sites stay terse; the actual input is the hoisted
+  // <TextField> (stable identity → no focus loss). Keep this a plain helper that
+  // returns an element, NOT a component, so it never introduces a new type.
+  const F = ({ k, label, placeholder }: { k: GenericTextKey; label: string; placeholder?: string }) => (
+    <TextField id={k} label={label} placeholder={placeholder} value={text[k]} onChange={set(k)} />
+  );
 
   const handleSave = () => {
     // fullName is required by the profile schema — resend the existing value so
@@ -478,24 +538,14 @@ function ApplicationDetailsTab({
     onSave(payload);
   };
 
-  const F = ({ k, label, placeholder }: { k: GenericTextKey; label: string; placeholder?: string }) => (
-    <div className="space-y-1.5">
-      <Label htmlFor={k}>{label}</Label>
-      <Input id={k} value={text[k]} placeholder={placeholder} onChange={(e) => set(k)(e.target.value)} />
-    </div>
+  // Adapter helper, mirrors F. Called as a function ({YesNo({...})}), not <YesNo/>.
+  const YesNo = (props: { label: string; value: boolean | undefined; onChange: (b: boolean | undefined) => void }) => (
+    <YesNoField {...props} />
   );
 
-  const YesNo = ({ label, value, onChange }: { label: string; value: boolean | undefined; onChange: (b: boolean | undefined) => void }) => (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Select value={triToSelect(value)} onValueChange={(v) => onChange(selectToTri(v))}>
-        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="yes">Yes</SelectItem>
-          <SelectItem value="no">No</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
+  // EEO dropdown adapter — fixed option lists from eeo-options.
+  const Sel = ({ k, label }: { k: GenericTextKey; label: string }) => (
+    <SelectField id={k} label={label} value={text[k]} options={EEO_FIELD_OPTIONS[k] ?? []} onChange={set(k)} />
   );
 
   return (
@@ -508,71 +558,74 @@ function ApplicationDetailsTab({
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Legal identity</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <F k="legalFirstName" label="Legal first name" />
-          <F k="legalLastName" label="Legal last name" />
-          <F k="preferredName" label="Preferred name" />
+          {F({ k: "legalFirstName", label: "Legal first name" })}
+          {F({ k: "legalLastName", label: "Legal last name" })}
+          {F({ k: "preferredName", label: "Preferred name" })}
         </div>
       </section>
 
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address</h3>
-        <F k="addressLine1" label="Street address" placeholder="123 Main St" />
+        {F({ k: "addressLine1", label: "Street address", placeholder: "123 Main St" })}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <F k="city" label="City" />
-          <F k="state" label="State" />
-          <F k="zipCode" label="ZIP / Postal" />
-          <F k="country" label="Country" />
+          {F({ k: "city", label: "City" })}
+          {F({ k: "state", label: "State" })}
+          {F({ k: "zipCode", label: "ZIP / Postal" })}
+          {F({ k: "country", label: "Country" })}
         </div>
-        <F k="personalWebsite" label="Personal website" placeholder="https://…" />
       </section>
 
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work authorization</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <YesNo label="Require visa sponsorship?" value={requiresSponsorship} onChange={setRequiresSponsorship} />
-          <F k="visaStatus" label="Visa status (if any)" placeholder="e.g. H-1B, OPT" />
+          {YesNo({ label: "Require visa sponsorship?", value: requiresSponsorship, onChange: setRequiresSponsorship })}
+          {F({ k: "visaStatus", label: "Visa status (if any)", placeholder: "e.g. H-1B, OPT" })}
         </div>
       </section>
 
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employment &amp; education</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <F k="currentEmployer" label="Current employer" />
-          <F k="currentTitle" label="Current title" />
+          {F({ k: "currentEmployer", label: "Current employer" })}
+          {F({ k: "currentTitle", label: "Current title" })}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <F k="highestEducation" label="Highest education" placeholder="Bachelor's, Master's…" />
-          <F k="school" label="School / University" />
+          {F({ k: "highestEducation", label: "Highest education", placeholder: "Bachelor's, Master's…" })}
+          {F({ k: "school", label: "School / University" })}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <F k="degree" label="Degree" />
-          <F k="major" label="Major" />
-          <F k="graduationYear" label="Graduation year" />
+          {F({ k: "degree", label: "Degree" })}
+          {F({ k: "major", label: "Major" })}
+          {F({ k: "graduationYear", label: "Graduation year" })}
         </div>
       </section>
 
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Logistics</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <YesNo label="Willing to relocate?" value={willingToRelocate} onChange={setWillingToRelocate} />
-          <F k="desiredSalary" label="Desired salary" placeholder="$120,000" />
-          <F k="noticePeriod" label="Notice period" placeholder="2 weeks" />
-          <F k="availabilityToStart" label="Availability to start" placeholder="Immediately" />
+          {YesNo({ label: "Willing to relocate?", value: willingToRelocate, onChange: setWillingToRelocate })}
+          {F({ k: "desiredSalary", label: "Desired salary", placeholder: "$120,000" })}
+          {F({ k: "noticePeriod", label: "Notice period", placeholder: "2 weeks" })}
+          {F({ k: "availabilityToStart", label: "Availability to start", placeholder: "Immediately" })}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <F k="howHeard" label="How did you hear about us? (default)" placeholder="LinkedIn" />
-          <F k="referralName" label="Referral name (if any)" />
+          {F({ k: "howHeard", label: "How did you hear about us? (default)", placeholder: "LinkedIn" })}
+          {F({ k: "referralName", label: "Referral name (if any)" })}
         </div>
       </section>
 
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Voluntary self-identification (EEO)</h3>
-        <p className="text-xs text-muted-foreground">Optional. Stored only if you provide it; never auto-submitted without your review.</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <F k="gender" label="Gender" />
-          <F k="raceEthnicity" label="Race / ethnicity" />
-          <F k="veteranStatus" label="Veteran status" />
-          <F k="disabilityStatus" label="Disability status" />
+        <p className="text-xs text-muted-foreground">
+          Optional. If you select a value, it's used to auto-fill the matching EEO question
+          on applications (you can always change it). Leave any blank to "Decline to
+          self-identify" automatically. Nothing is ever submitted without your review.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {Sel({ k: "gender", label: "Gender" })}
+          {Sel({ k: "raceEthnicity", label: "Race / ethnicity" })}
+          {Sel({ k: "veteranStatus", label: "Veteran status" })}
+          {Sel({ k: "disabilityStatus", label: "Disability status" })}
         </div>
       </section>
 

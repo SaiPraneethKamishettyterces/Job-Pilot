@@ -15,6 +15,7 @@ const WORKER_NAME = "in-process-ingestion-worker";
 
 type Prefs = {
   targetCompanies: string[];
+  targetRoles: string[];
   blockedCompanies: string[];
   excludedKeywords: string[];
   preferredLocations: string[];
@@ -25,6 +26,7 @@ type Prefs = {
 async function loadPrefs(userId: string): Promise<Prefs> {
   const prefs = await prisma.userPreference.findUnique({ where: { userId } });
   const targetCompanies = ((prefs?.targetCompaniesJson as string[] | undefined) ?? []).filter(Boolean);
+  const targetRoles = ((prefs?.targetRolesJson as string[] | undefined) ?? []).filter(Boolean);
   const blockedCompanies = ((prefs?.blockedCompaniesJson as string[] | undefined) ?? []).filter(Boolean);
   const preferredLocations = ((prefs?.locationsJson as string[] | undefined) ?? []).filter(Boolean);
   const remotePreference = prefs?.remotePreference ?? "any";
@@ -35,7 +37,49 @@ async function loadPrefs(userId: string): Promise<Prefs> {
     : [];
   const perDay = prefs?.applicationsPerDay ?? 10;
   const jobsCap = Math.min(MAX_JOBS_PER_RUN, Math.max(20, perDay * 5));
-  return { targetCompanies, blockedCompanies, excludedKeywords, preferredLocations, remotePreference, jobsCap };
+  return { targetCompanies, targetRoles, blockedCompanies, excludedKeywords, preferredLocations, remotePreference, jobsCap };
+}
+
+// Seniority / filler words dropped from a target role before matching — they
+// shouldn't be REQUIRED (a "Senior AI Engineer" target should still match an
+// "AI Engineer" posting). Everything else (ai, machine, engineer, scientist…) is
+// a meaningful token that must be present.
+const ROLE_FILLER = new Set(
+  "senior junior staff lead principal head director sr jr i ii iii iv v of and or for the a an to in at on with".split(" ")
+);
+
+// Light stem so engineer/engineering/engineers, developer/developers, etc. all
+// compare equal. (Strip common trailing inflections.)
+function stem(w: string): string {
+  return w.replace(/(ing|ers|er|s)$/, "");
+}
+
+function titleWords(title: string): Set<string> {
+  return new Set(title.toLowerCase().split(/[^a-z0-9+#]+/).filter(Boolean).map(stem));
+}
+
+// Each target role becomes a "spec": the set of meaningful (non-filler) stemmed
+// tokens it requires. "AI Engineer" → {ai, engine}; "Machine Learning Engineer"
+// → {machine, learn, engine}; "Gen AI Engineer" → {gen, ai, engine}.
+function roleSpecs(roles: string[]): string[][] {
+  const specs: string[][] = [];
+  for (const r of roles) {
+    const toks = r.toLowerCase().split(/[^a-z0-9+#]+/).filter(Boolean)
+      .filter((w) => w.length >= 2 && !ROLE_FILLER.has(w))
+      .map(stem);
+    if (toks.length) specs.push([...new Set(toks)]);
+  }
+  return specs;
+}
+
+// A job matches if its title contains ALL tokens of AT LEAST ONE target-role spec.
+// This keeps "AI Engineer" matching "Backend Engineer, AI Security" but rejects
+// "Account Executive, AI Sales" (has "ai" but not the "engineer" function). With
+// no target roles set, no role filtering is applied.
+function matchesRole(title: string, specs: string[][]): boolean {
+  if (specs.length === 0) return true;
+  const words = titleWords(title);
+  return specs.some((spec) => spec.every((tok) => words.has(tok)));
 }
 
 function passesFilters(raw: RawJob, prefs: Prefs): boolean {
@@ -145,11 +189,17 @@ export async function runIngestion(runId: string): Promise<void> {
     });
 
     // Filter, normalize, and dedup within this batch.
+    const specs = roleSpecs(prefs.targetRoles);
     const seen = new Set<string>();
     const rows: ReturnType<typeof toJobRow>[] = [];
     let locationFiltered = 0;
+    let roleFiltered = 0;
     for (const raw of rawJobs) {
       if (!passesFilters(raw, prefs)) continue;
+      // Role gate: drop postings whose title doesn't match a target role. This is
+      // deterministic (independent of the match-scoring model) so off-target roles
+      // (e.g. "AML Lead" or "AI Sales" when the user wants "AI Engineer") never get ingested.
+      if (!matchesRole(raw.title, specs)) { roleFiltered++; continue; }
       const norm = normalizeJob(raw);
       if (!matchesLocation(norm, prefs)) { locationFiltered++; continue; }
       if (seen.has(norm.dedupeKey)) continue;
@@ -158,8 +208,9 @@ export async function runIngestion(runId: string): Promise<void> {
       if (rows.length >= prefs.jobsCap) break;
     }
     logger.info(
-      { runId, locationFiltered, kept: rows.length, prefs: { locations: prefs.preferredLocations, remote: prefs.remotePreference } },
-      "Ingestion: location filtering applied"
+      { runId, roleFiltered, locationFiltered, kept: rows.length,
+        prefs: { roles: prefs.targetRoles, locations: prefs.preferredLocations, remote: prefs.remotePreference } },
+      "Ingestion: role + location filtering applied"
     );
 
     // Insert into T2. skipDuplicates respects @@unique([userId, dedupeKey]) so

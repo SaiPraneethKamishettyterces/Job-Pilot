@@ -23,6 +23,11 @@ function num(key: string, fallback: number): number {
   const n = v ? parseInt(v, 10) : NaN;
   return Number.isFinite(n) ? n : fallback;
 }
+function numFloat(key: string, fallback: number): number {
+  const v = process.env[key];
+  const n = v ? parseFloat(v) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
 function bool(key: string, fallback = false): boolean {
   const v = process.env[key];
   if (v == null) return fallback;
@@ -116,6 +121,9 @@ export const config = {
     //   Playwright form-fill (requires Chromium in the image + ≥1GiB memory).
     mode: (optional("AUTOMATION_MODE", "assisted") === "auto" ? "auto" : "assisted") as "assisted" | "auto",
     autoSubmit: bool("AUTO_SUBMIT", false),
+    // Show the browser window while form-filling (for local testing/debugging).
+    // Off in prod (headless). No effect unless AUTOMATION_MODE=auto.
+    headed: bool("PLAYWRIGHT_HEADED", false),
     maxJobsPerRun: num("MAX_JOBS_PER_RUN", 60),
     // Daily application cap fallback when a user has no preference set.
     defaultApplicationsPerDay: num("DEFAULT_APPLICATIONS_PER_DAY", 10),
@@ -137,6 +145,19 @@ export const config = {
       hour: num("DAILY_RUN_HOUR", 8), // server-local hour 0–23
       checkIntervalMinutes: num("DAILY_SCHEDULER_INTERVAL_MINUTES", 30),
     },
+  },
+
+  // ── Q&A / open-question answering ─────────────────────────────────────────
+  // confidenceThreshold: answers scoring below this are flagged for user review
+  //   (AI free-text answers are capped at 0.7, so the prod default 0.75 means they
+  //   always surface for review). Lower it for TESTING so drafted answers auto-fill.
+  // answerAll: when true, route EVERY non-sensitive open question to the AI (not
+  //   just ones matching the generic "why do you…" pattern) — used in testing so no
+  //   open field is left blank. Sensitive questions (visa/salary/etc) still require
+  //   grounded data regardless.
+  qa: {
+    confidenceThreshold: numFloat("QA_CONFIDENCE_THRESHOLD", 0.75),
+    answerAll: bool("QA_ANSWER_ALL", false),
   },
 
   // ── Notifications (email) ─────────────────────────────────────────────────
