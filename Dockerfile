@@ -1,4 +1,4 @@
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -16,7 +16,7 @@ RUN npm run build
 # autofill package + documents and the user submits. This keeps the image small
 # and Cloud Run memory low. To enable headless auto-fill (AUTOMATION_MODE=auto),
 # add a Playwright/Chromium install step here and raise Cloud Run memory to >=1GiB.
-FROM node:20-slim
+FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080
 
