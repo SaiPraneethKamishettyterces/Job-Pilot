@@ -3,7 +3,10 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Prod build is served by Express under /admin (so assets resolve to /admin/...).
+  // Dev server stays at the root of :5174, unchanged.
+  base: command === "build" ? "/admin/" : "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -28,4 +31,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

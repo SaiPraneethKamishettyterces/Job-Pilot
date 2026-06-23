@@ -87,6 +87,13 @@ app.use("/api", notFoundHandler);
 if (env.NODE_ENV === "production") {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const distPath = path.resolve(__dirname, "..");
+  // Admin bundle (separate Vite app, built with base "/admin/") — served under
+  // /admin on the SAME origin so its session token is shared with the main app.
+  // Must be registered BEFORE the main static + catch-all so /admin/* resolves here.
+  const adminPath = path.resolve(__dirname, "..", "..", "dist-admin");
+  app.use("/admin", express.static(adminPath));
+  app.get("/admin/*splat", (_req, res) => res.sendFile(path.join(adminPath, "admin.html")));
+
   app.use(express.static(distPath));
   // Express 5 dropped bare "*" wildcards — use a named splat for the SPA fallback.
   app.get("/*splat", (_req, res) => res.sendFile(path.join(distPath, "index.html")));

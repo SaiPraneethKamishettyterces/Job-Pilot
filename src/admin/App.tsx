@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, NavLink } from "react-router-do
 import { BarChart2, ShieldCheck, Database } from "lucide-react";
 import { BaseProviders } from "@/app/providers";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { AdminAuthGate } from "./AdminAuthGate";
 import { ExecutiveBillingPage } from "./pages/billing";
 import { AdminSourcesPage } from "./pages/sources";
 
@@ -42,15 +43,17 @@ export function AdminApp() {
   return (
     <ErrorBoundary>
       <BaseProviders>
-        <BrowserRouter>
-          <AdminLayout>
-            <Routes>
-              <Route path="/billing" element={<ExecutiveBillingPage />} />
-              <Route path="/sources" element={<AdminSourcesPage />} />
-              <Route path="*" element={<Navigate to="/billing" replace />} />
-            </Routes>
-          </AdminLayout>
-        </BrowserRouter>
+        <AdminAuthGate>
+          <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/+$/, "") || "/"}>
+            <AdminLayout>
+              <Routes>
+                <Route path="/billing" element={<ExecutiveBillingPage />} />
+                <Route path="/sources" element={<AdminSourcesPage />} />
+                <Route path="*" element={<Navigate to="/billing" replace />} />
+              </Routes>
+            </AdminLayout>
+          </BrowserRouter>
+        </AdminAuthGate>
       </BaseProviders>
     </ErrorBoundary>
   );
