@@ -1,43 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate, NavLink } from "react-router-dom";
-import { BarChart2, ShieldCheck, Database } from "lucide-react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { BaseProviders } from "@/app/providers";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { AdminAuthGate } from "./AdminAuthGate";
+import { AdminShell } from "./components/AdminShell";
+import { AdminOverviewPage } from "./pages/overview";
 import { ExecutiveBillingPage } from "./pages/billing";
 import { AdminSourcesPage } from "./pages/sources";
-
-const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
-    isActive
-      ? "bg-primary/10 text-primary font-medium"
-      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-  }`;
-
-function AdminLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Top bar */}
-      <header className="border-b px-6 py-3 flex items-center gap-3">
-        <ShieldCheck className="h-5 w-5 text-primary" />
-        <span className="font-semibold text-sm">Terces Admin</span>
-        <span className="text-muted-foreground text-xs">— Internal only</span>
-        <nav className="ml-6 flex gap-1">
-          <NavLink to="/billing" className={navLinkClass}>
-            <BarChart2 className="h-4 w-4" />
-            Billing Dashboard
-          </NavLink>
-          <NavLink to="/sources" className={navLinkClass}>
-            <Database className="h-4 w-4" />
-            Sources &amp; Scrapers
-          </NavLink>
-        </nav>
-      </header>
-
-      {/* Content */}
-      <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
-    </div>
-  );
-}
 
 export function AdminApp() {
   return (
@@ -45,13 +13,14 @@ export function AdminApp() {
       <BaseProviders>
         <AdminAuthGate>
           <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/+$/, "") || "/"}>
-            <AdminLayout>
+            <AdminShell>
               <Routes>
-                <Route path="/billing" element={<ExecutiveBillingPage />} />
+                <Route path="/" element={<AdminOverviewPage />} />
+                <Route path="/financials" element={<ExecutiveBillingPage />} />
                 <Route path="/sources" element={<AdminSourcesPage />} />
-                <Route path="*" element={<Navigate to="/billing" replace />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
-            </AdminLayout>
+            </AdminShell>
           </BrowserRouter>
         </AdminAuthGate>
       </BaseProviders>

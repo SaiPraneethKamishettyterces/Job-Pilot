@@ -134,26 +134,13 @@ export type PostingCandidate = {
   vectorScore: number; // cosine similarity in [0,1], higher = closer
 };
 
-/**
- * Stage-A candidate generation: ANN over the pool by cosine distance to the user
- * query vector, narrowed by hard SQL filters. Returns up to `limit` postings
- * ordered by similarity (closest first).
- */
-export async function searchCandidates(
-  queryVector: number[],
-  filters: CandidateFilters,
-  limit: number,
-): Promise<PostingCandidate[]> {
-  const vec = toVectorLiteral(queryVector);
-  const conds: Prisma.Sql[] = [
-    Prisma.sql`("postingStatus" IS NULL OR "postingStatus" = 'active')`,
-    Prisma.sql`"embedding" IS NOT NULL`,
-  ];
-
+// Shared hard-filter predicates (everything except the vector/embedding bits), so
+// the vector and no-vector retrieval paths apply identical user constraints.
+function filterConds(filters: CandidateFilters): Prisma.Sql[] {
+  const conds: Prisma.Sql[] = [Prisma.sql`("postingStatus" IS NULL OR "postingStatus" = 'active')`];
   if (filters.freshnessHours && filters.freshnessHours > 0) {
     // "Daily-new": new to our pool (firstSeenAt) OR genuinely posted recently
-    // (postedAt, when the source provides it). firstSeenAt covers the many sources
-    // with null postedAt so they aren't dropped.
+    // (postedAt). firstSeenAt covers the many sources with null postedAt.
     const h = filters.freshnessHours;
     conds.push(
       Prisma.sql`("firstSeenAt" > now() - ${h} * interval '1 hour' OR ("postedAt" IS NOT NULL AND "postedAt" > now() - ${h} * interval '1 hour'))`,
@@ -167,7 +154,6 @@ export async function searchCandidates(
   }
   if (filters.places?.length) {
     const placeConds = filters.places.map((p) => Prisma.sql`lower("location") LIKE ${`%${p.toLowerCase()}%`}`);
-    // Remote postings also satisfy a place filter (don't drop remote-eligible roles).
     conds.push(Prisma.sql`("remoteType" = 'remote' OR "isRemote" = true OR ${Prisma.join(placeConds, " OR ")})`);
   }
   if (filters.minSalary && filters.minSalary > 0) {
@@ -179,17 +165,57 @@ export async function searchCandidates(
   if (filters.excludePostingIds?.length) {
     conds.push(Prisma.sql`"id" NOT IN (${Prisma.join(filters.excludePostingIds)})`);
   }
+  return conds;
+}
 
-  const where = Prisma.join(conds, " AND ");
+const CANDIDATE_COLUMNS = Prisma.sql`"id", "title", "company", "location", "isRemote", "remoteType", "employmentType",
+  "seniority", "salaryMin", "salaryMax", "salaryCurrency", "description", "descriptionClean",
+  "requirementsJson", "skillsJson", "toolsJson", "experienceMin", "experienceMax",
+  "atsPlatform", "workAuthorization", "jobUrl", "applyUrl", "postedAt"`;
+
+/**
+ * Stage-A candidate generation: ANN over the pool by cosine distance to the user
+ * query vector, narrowed by hard SQL filters. Returns up to `limit` postings
+ * ordered by similarity (closest first).
+ */
+export async function searchCandidates(
+  queryVector: number[],
+  filters: CandidateFilters,
+  limit: number,
+): Promise<PostingCandidate[]> {
+  const vec = toVectorLiteral(queryVector);
+  const where = Prisma.join([...filterConds(filters), Prisma.sql`"embedding" IS NOT NULL`], " AND ");
   const rows = await prisma.$queryRaw<PostingCandidate[]>`
-    SELECT "id", "title", "company", "location", "isRemote", "remoteType", "employmentType",
-           "seniority", "salaryMin", "salaryMax", "salaryCurrency", "description", "descriptionClean",
-           "requirementsJson", "skillsJson", "toolsJson", "experienceMin", "experienceMax",
-           "atsPlatform", "workAuthorization", "jobUrl", "applyUrl", "postedAt",
-           1 - ("embedding" <=> ${vec}::vector) AS "vectorScore"
+    SELECT ${CANDIDATE_COLUMNS}, 1 - ("embedding" <=> ${vec}::vector) AS "vectorScore"
     FROM "JobPosting"
     WHERE ${where}
     ORDER BY "embedding" <=> ${vec}::vector
+    LIMIT ${limit}`;
+  return rows;
+}
+
+/**
+ * No-AI fallback retrieval: when the pool has no embeddings (no AI provider), match
+ * by target-role keywords in the title (when provided) under the same hard filters,
+ * ordered by recency. Returns candidates with vectorScore = 0.
+ */
+export async function searchCandidatesNoVector(
+  filters: CandidateFilters,
+  roleKeywords: string[],
+  limit: number,
+): Promise<PostingCandidate[]> {
+  const conds = filterConds(filters);
+  const kws = roleKeywords.map((k) => k.trim()).filter(Boolean);
+  if (kws.length) {
+    const kwConds = kws.map((k) => Prisma.sql`"title" ILIKE ${`%${k}%`}`);
+    conds.push(Prisma.sql`(${Prisma.join(kwConds, " OR ")})`);
+  }
+  const where = Prisma.join(conds, " AND ");
+  const rows = await prisma.$queryRaw<PostingCandidate[]>`
+    SELECT ${CANDIDATE_COLUMNS}, 0::float8 AS "vectorScore"
+    FROM "JobPosting"
+    WHERE ${where}
+    ORDER BY "postedAt" DESC NULLS LAST, "firstSeenAt" DESC
     LIMIT ${limit}`;
   return rows;
 }

@@ -15,7 +15,9 @@ export function AppLayout() {
   }
 
   if (!user) return <Navigate to="/login" replace />;
-  if (!user.onboardingDone) return <Navigate to="/onboarding" replace />;
+  // Admins/owners use the product to monitor it, not as job-seekers — skip the
+  // job-seeker onboarding flow for them.
+  if (!user.onboardingDone && !user.isAdmin) return <Navigate to="/onboarding" replace />;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">

@@ -6,11 +6,15 @@
 // selectTopMatches — the exact shape the existing pipeline already consumes.
 import { prisma } from "../../lib/db.js";
 import { logger } from "../../lib/logger.js";
+import { hasProvider } from "../ai/ai-service.js";
+import { TASK_MODEL } from "../ai/model-config.js";
 import { scoreJobMatch, type ProfileSnapshot } from "./match-scorer.js";
 import { roleSpecs, titleOverlap } from "./title-match.js";
 import type { ScoredJob } from "./select-matches.js";
 import type { PostingCandidate } from "../../repositories/job-posting-repository.js";
 import type { ParsedJob } from "../job-discovery/job-parser.js";
+
+type MatchVerdict = { score: number; decision: "SHORTLIST" | "REVIEW" | "SKIP"; reasons: string[]; risks: string[] };
 
 // How many of the cheaply-ranked candidates get the (more expensive) LLM rerank.
 export const RERANK_LIMIT = 40;
@@ -39,14 +43,27 @@ function postingToParsedJob(p: PostingCandidate): ParsedJob {
   };
 }
 
-/** Deterministic 0..1 feature score: vector + title/role overlap + skill overlap. */
-function featureScore(p: PostingCandidate, specs: string[][], userSkills: Set<string>): number {
+/** Deterministic score components in 0..1: vector similarity, title/role overlap, skill overlap. */
+function scoreComponents(p: PostingCandidate, specs: string[][], userSkills: Set<string>) {
   const jobSkills = asStringArray(p.skillsJson).map((s) => s.toLowerCase());
-  const skillOverlap = jobSkills.length
-    ? jobSkills.filter((s) => userSkills.has(s)).length / jobSkills.length
-    : 0;
-  const titleScore = titleOverlap(p.title, specs);
-  return 0.6 * p.vectorScore + 0.25 * titleScore + 0.15 * skillOverlap;
+  const skill = jobSkills.length ? jobSkills.filter((s) => userSkills.has(s)).length / jobSkills.length : 0;
+  const title = titleOverlap(p.title, specs);
+  // Blended score used for ranking (vector dominates when present).
+  const combined = 0.6 * p.vectorScore + 0.25 * title + 0.15 * skill;
+  return { combined, title, skill };
+}
+
+// No-AI verdict: derive score + decision from title/skill overlap (no vector). A
+// decent title-or-skill match shortlists; weak/neutral matches surface for review.
+const NO_AI_SHORTLIST_THRESHOLD = 50;
+function deterministicVerdict(title: number, skill: number): MatchVerdict {
+  const score = Math.round((0.55 * title + 0.45 * skill) * 100);
+  return {
+    score,
+    decision: score >= NO_AI_SHORTLIST_THRESHOLD ? "SHORTLIST" : "REVIEW",
+    reasons: ["Matched by target-role keyword / recency (AI scoring not configured)"],
+    risks: [],
+  };
 }
 
 /**
@@ -63,17 +80,22 @@ export async function rerankCandidates(
 
   const specs = roleSpecs(snapshot.targetRoles);
   const userSkills = new Set(snapshot.skills.map((s) => s.toLowerCase()));
+  const aiAvailable = hasProvider(TASK_MODEL.matchScore.provider);
 
-  // Cheap pass over ALL candidates → keep the top slice for LLM rerank.
+  // Cheap pass over ALL candidates → keep the top slice for (optional) LLM rerank.
   const ranked = candidates
-    .map((p) => ({ p, feature: featureScore(p, specs, userSkills) }))
-    .sort((a, b) => b.feature - a.feature)
+    .map((p) => ({ p, c: scoreComponents(p, specs, userSkills) }))
+    .sort((a, b) => b.c.combined - a.c.combined)
     .slice(0, RERANK_LIMIT);
 
   const scored: ScoredJob[] = [];
-  for (const { p, feature } of ranked) {
-    // LLM rerank (Gemini Flash via scoreJobMatch).
-    const result = await scoreJobMatch(postingToParsedJob(p), snapshot);
+  for (const { p, c } of ranked) {
+    const feature = c.combined;
+    // With an AI provider: LLM rerank (Gemini Flash). Without one: deterministic
+    // verdict from title/skill overlap so jobs still flow and can shortlist.
+    const result: MatchVerdict = aiAvailable
+      ? await scoreJobMatch(postingToParsedJob(p), snapshot)
+      : deterministicVerdict(c.title, c.skill);
 
     // Materialize the per-user Job handle (idempotent on (userId, postingId)).
     const job = await prisma.job.upsert({

@@ -5,6 +5,7 @@ export interface User {
   email: string;
   name?: string;
   avatarUrl?: string;
+  isAdmin?: boolean;
   onboardingDone: boolean;
   emailVerified?: boolean;
   createdAt: string;

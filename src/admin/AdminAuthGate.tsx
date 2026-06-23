@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ShieldCheck, LogOut } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { api, TOKEN_KEY } from "@/services/api/client";
 import { getIngestionStatus } from "@/services/api/admin";
 
@@ -62,20 +62,7 @@ export function AdminAuthGate({ children }: { children: React.ReactNode }) {
     return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>;
   }
 
-  if (phase === "authed") {
-    return (
-      <div className="relative">
-        <button
-          onClick={logout}
-          className="absolute right-6 top-3 z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted"
-          title="Log out"
-        >
-          <LogOut className="h-3.5 w-3.5" /> Logout
-        </button>
-        {children}
-      </div>
-    );
-  }
+  if (phase === "authed") return <>{children}</>;
 
   // login | notAdmin
   return (

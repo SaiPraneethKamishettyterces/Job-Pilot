@@ -1,13 +1,14 @@
-// Stage A — candidate generation. Cheap, no LLM: build a query vector from the
-// user's profile and retrieve the nearest postings from the global pool via ANN,
-// narrowed by hard SQL filters (location, work-auth, blocked, salary, freshness,
-// already-seen). Returns ~200 candidates for the reranker (stage B) to refine.
+// Stage A — candidate generation. Cheap, no LLM: retrieve the most relevant
+// postings from the global pool. Uses vector ANN when an AI provider is configured
+// (semantic match); otherwise falls back to SQL keyword/recency retrieval so jobs
+// still flow with zero AI key. Returns ~200 candidates for the reranker (stage B).
 import { prisma } from "../../lib/db.js";
 import { logger } from "../../lib/logger.js";
 import { config } from "../../lib/config.js";
 import { compatEmbed, hasCompat } from "../ai/ai-service.js";
 import {
   searchCandidates,
+  searchCandidatesNoVector,
   type CandidateFilters,
   type PostingCandidate,
 } from "../../repositories/job-posting-repository.js";
@@ -28,25 +29,15 @@ function queryText(snapshot: ProfileSnapshot): string {
 }
 
 /**
- * Retrieve candidate postings for a user from the global pool. Returns [] when no
- * embedding provider is configured (the pool can't be searched without a query
- * vector), so callers degrade gracefully rather than throwing.
+ * Retrieve candidate postings for a user from the global pool. Prefers semantic
+ * (vector) retrieval; degrades to keyword/recency when no AI provider is configured
+ * or the pool isn't embedded yet — so users always get jobs.
  */
 export async function generateCandidates(
   userId: string,
   snapshot: ProfileSnapshot,
   limit = CANDIDATE_LIMIT,
 ): Promise<PostingCandidate[]> {
-  if (!hasCompat()) {
-    logger.warn({ userId }, "generateCandidates: AI provider not configured — no vector retrieval");
-    return [];
-  }
-
-  const text = queryText(snapshot);
-  if (!text.trim()) return [];
-  const [queryVector] = await compatEmbed([text]);
-  if (!queryVector?.length) return [];
-
   // Preferred locations (prefs) + sponsorship requirement (profile) aren't on the
   // snapshot — load the few extra fields we need for the hard filters.
   const [prefs, profile, appliedJobs] = await Promise.all([
@@ -60,29 +51,51 @@ export async function generateCandidates(
   const places = locations.filter((l) => l !== "remote");
   const excludePostingIds = appliedJobs.map((j) => j.postingId).filter((v): v is string => Boolean(v));
 
-  const filters: CandidateFilters = {
+  const baseFilters: CandidateFilters = {
     blockedCompanies: snapshot.blockedCompanies,
     requireRemote,
     places,
     minSalary: snapshot.minSalary,
     requiresSponsorship: Boolean(profile?.requiresSponsorship),
-    freshnessHours: config.matching.freshnessHours,
     excludePostingIds,
   };
 
-  // "Daily-new": pull postings new within the last 24h. If a slow day yields too
-  // few, widen ONCE to the fallback window so the shortlist still fills.
-  let candidates = await searchCandidates(queryVector, filters, limit);
-  let window = config.matching.freshnessHours;
-  if (candidates.length < config.matching.minFreshCandidates &&
-      config.matching.freshnessFallbackHours > config.matching.freshnessHours) {
-    window = config.matching.freshnessFallbackHours;
-    candidates = await searchCandidates(queryVector, { ...filters, freshnessHours: window }, limit);
+  // Run a retrieval at the "daily-new" window; if too few, widen once to the
+  // fallback window so a slow day still fills the shortlist.
+  const withFreshness = async (
+    retrieve: (fHours: number) => Promise<PostingCandidate[]>,
+  ): Promise<{ rows: PostingCandidate[]; window: number }> => {
+    let rows = await retrieve(config.matching.freshnessHours);
+    let window = config.matching.freshnessHours;
+    if (rows.length < config.matching.minFreshCandidates &&
+        config.matching.freshnessFallbackHours > config.matching.freshnessHours) {
+      window = config.matching.freshnessFallbackHours;
+      rows = await retrieve(window);
+    }
+    return { rows, window };
+  };
+
+  // 1) Semantic path — only when AI is configured and we can build a query vector.
+  if (hasCompat()) {
+    const text = queryText(snapshot);
+    if (text.trim()) {
+      const [queryVector] = await compatEmbed([text]);
+      if (queryVector?.length) {
+        const { rows, window } = await withFreshness((fHours) =>
+          searchCandidates(queryVector, { ...baseFilters, freshnessHours: fHours }, limit),
+        );
+        if (rows.length) {
+          logger.info({ userId, candidates: rows.length, mode: "vector", freshnessHours: window }, "generateCandidates");
+          return rows;
+        }
+      }
+    }
   }
-  logger.info(
-    { userId, candidates: candidates.length, freshnessHours: window,
-      widened: window !== config.matching.freshnessHours },
-    "generateCandidates: stage A retrieval",
+
+  // 2) No-AI / un-embedded-pool fallback — keyword (target roles) + recency.
+  const { rows, window } = await withFreshness((fHours) =>
+    searchCandidatesNoVector({ ...baseFilters, freshnessHours: fHours }, snapshot.targetRoles, limit),
   );
-  return candidates;
+  logger.info({ userId, candidates: rows.length, mode: "keyword", freshnessHours: window }, "generateCandidates (no-AI fallback)");
+  return rows;
 }

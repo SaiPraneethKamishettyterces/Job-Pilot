@@ -28,10 +28,11 @@ function makeToken(userId: string) {
 
 function safeUser(u: {
   id: string; email: string; name: string | null; avatarUrl: string | null;
-  onboardingDone: boolean; emailVerified?: boolean; createdAt: Date;
+  isAdmin?: boolean; onboardingDone: boolean; emailVerified?: boolean; createdAt: Date;
 }) {
   return {
     id: u.id, email: u.email, name: u.name ?? "", avatarUrl: u.avatarUrl,
+    isAdmin: u.isAdmin ?? false,
     onboardingDone: u.onboardingDone, emailVerified: u.emailVerified ?? false,
     createdAt: u.createdAt.toISOString(),
   };
