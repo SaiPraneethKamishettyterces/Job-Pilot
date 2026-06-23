@@ -1,8 +1,16 @@
 import { BrowserRouter, Routes, Route, Navigate, NavLink } from "react-router-dom";
-import { BarChart2, ShieldCheck } from "lucide-react";
+import { BarChart2, ShieldCheck, Database } from "lucide-react";
 import { BaseProviders } from "@/app/providers";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { ExecutiveBillingPage } from "./pages/billing";
+import { AdminSourcesPage } from "./pages/sources";
+
+const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
+    isActive
+      ? "bg-primary/10 text-primary font-medium"
+      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+  }`;
 
 function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -13,18 +21,13 @@ function AdminLayout({ children }: { children: React.ReactNode }) {
         <span className="font-semibold text-sm">Terces Admin</span>
         <span className="text-muted-foreground text-xs">— Internal only</span>
         <nav className="ml-6 flex gap-1">
-          <NavLink
-            to="/billing"
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
-                isActive
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              }`
-            }
-          >
+          <NavLink to="/billing" className={navLinkClass}>
             <BarChart2 className="h-4 w-4" />
             Billing Dashboard
+          </NavLink>
+          <NavLink to="/sources" className={navLinkClass}>
+            <Database className="h-4 w-4" />
+            Sources &amp; Scrapers
           </NavLink>
         </nav>
       </header>
@@ -43,6 +46,7 @@ export function AdminApp() {
           <AdminLayout>
             <Routes>
               <Route path="/billing" element={<ExecutiveBillingPage />} />
+              <Route path="/sources" element={<AdminSourcesPage />} />
               <Route path="*" element={<Navigate to="/billing" replace />} />
             </Routes>
           </AdminLayout>

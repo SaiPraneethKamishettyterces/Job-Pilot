@@ -36,7 +36,6 @@ export type NormalizedJob = {
   jobUrl: string | null;
   applyUrl: string | null;
   postedAt: string | null;
-  embedding: number[] | null;
   dedupeKey: string;
   contentHash: string;
 };
@@ -278,7 +277,6 @@ export function normalizeJob(raw: RawJob): NormalizedJob {
     jobUrl: raw.jobUrl,
     applyUrl: raw.applyUrl,
     postedAt: raw.postedAt,
-    embedding: null, // stub — populated in the matching milestone
     dedupeKey,
     contentHash,
   };

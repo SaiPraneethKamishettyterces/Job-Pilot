@@ -84,6 +84,85 @@ export const config = {
     embedModel: optional("AI_EMBED_MODEL", "text-embedding-004"),
   },
 
+  // ── Job sources (free aggregator APIs) ───────────────────────────────────
+  // Keyless sources (Remotive, RemoteOK, Arbeitnow, The Muse unregistered) work
+  // with no config. Adzuna + USAJOBS need free registration; when their keys are
+  // absent those adapters self-skip (return []).
+  sources: {
+    adzunaAppId: optional("ADZUNA_APP_ID"),
+    adzunaAppKey: optional("ADZUNA_APP_KEY"),
+    adzunaCountry: optional("ADZUNA_COUNTRY", "us"),
+    usajobsApiKey: optional("USAJOBS_API_KEY"),
+    // USAJOBS requires a contact email in the User-Agent header.
+    usajobsUserAgent: optional("USAJOBS_USER_AGENT", "jobpilot@example.com"),
+    // The Muse works unauthenticated (lower rate limit); a key raises it.
+    museApiKey: optional("THEMUSE_API_KEY"),
+    // Cap pages pulled per keyword'd aggregator per ingest cycle.
+    maxPagesPerSource: num("INGEST_MAX_PAGES_PER_SOURCE", 2),
+    // Demand-driven ingestion caps: how many distinct target-role keywords and
+    // locations from active subscribers steer the search APIs (Adzuna/USAJOBS).
+    maxKeywords: num("INGEST_MAX_KEYWORDS", 30),
+    maxLocations: num("INGEST_MAX_LOCATIONS", 10),
+  },
+
+  // ── Matching freshness ("daily-new" 24h policy) ─────────────────────────────
+  // Per-user candidate generation surfaces only postings new within freshnessHours
+  // (by firstSeenAt OR postedAt). If fewer than minFreshCandidates are found, it
+  // widens once to freshnessFallbackHours so a slow day still fills the shortlist.
+  matching: {
+    freshnessHours: num("MATCH_FRESHNESS_HOURS", 24),
+    freshnessFallbackHours: num("MATCH_FRESHNESS_FALLBACK_HOURS", 168),
+    minFreshCandidates: num("MATCH_MIN_FRESH_CANDIDATES", 40),
+  },
+
+  // ── Pool retention ──────────────────────────────────────────────────────────
+  ingest: {
+    // Postings not re-seen within this many days are soft-expired (dropped from
+    // matching); a later sighting re-activates them.
+    poolRetentionDays: num("POOL_RETENTION_DAYS", 21),
+  },
+
+  // ── Admin ─────────────────────────────────────────────────────────────────
+  // Comma-separated allowlist of admin emails. requireAdmin grants access when the
+  // user's email is listed OR User.isAdmin is true. Bootstraps the first admin.
+  admin: {
+    emails: optional("ADMIN_EMAILS")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  },
+
+  // ── Apify (paid scraper track: LinkedIn / Indeed / Hiring Cafe) ──────────────
+  // Adapters self-skip when no token is set. Actor slugs are overridable so a
+  // breaking actor can be swapped without a code change.
+  apify: {
+    token: optional("APIFY_TOKEN"),
+    actors: {
+      linkedin: optional("APIFY_ACTOR_LINKEDIN", "bebity/linkedin-jobs-scraper"),
+      indeed: optional("APIFY_ACTOR_INDEED", "misceres/indeed-scraper"),
+      hiringcafe: optional("APIFY_ACTOR_HIRINGCAFE", "automation-lab/hiring-cafe-jobs-scraper"),
+    },
+    // Cap on distinct demand keywords sent to the (paid) scrapers per run.
+    maxKeywords: num("APIFY_MAX_KEYWORDS", 5),
+  },
+
+  // ── ATS registry (Track 1: wide company coverage) ────────────────────────────
+  registry: {
+    // Master switch for the scheduled weekly resync of the registry from public
+    // GitHub seed datasets (the importers below). Manual seed is always available
+    // via `npm run seed:registry` regardless of this flag.
+    syncEnabled: bool("ATS_REGISTRY_SYNC_ENABLED", false),
+    // Which public seed datasets to import (all MIT-licensed). stapply is the
+    // cleanest/largest (CSV per ATS, ~63k); the others widen further.
+    seedStapply: bool("ATS_SEED_STAPPLY", true),
+    seedFeashliaa: bool("ATS_SEED_FEASHLIAA", false),
+    seedOpenjobs: bool("ATS_SEED_OPENJOBS", false),
+    // Feasibility cap: at tens of thousands of boards we can't fetch them all each
+    // run. The ingestor fetches demand-resolved boards first, then fills up to this
+    // many more from the registry (prioritized). 0 = unlimited (not recommended).
+    maxBoardsPerRun: num("INGEST_MAX_BOARDS_PER_RUN", 1500),
+  },
+
   // ── Stripe (subscriptions / payments) ───────────────────────────────────
   stripe: {
     secretKey: optional("STRIPE_SECRET_KEY"),
@@ -144,6 +223,9 @@ export const config = {
       enabled: bool("DAILY_SCHEDULER_ENABLED", NODE_ENV !== "test"),
       hour: num("DAILY_RUN_HOUR", 8), // server-local hour 0–23
       checkIntervalMinutes: num("DAILY_SCHEDULER_INTERVAL_MINUTES", 30),
+      // Refresh the shared global job pool once/day at/after this hour, BEFORE the
+      // per-user runs at `hour` read from it. Keep it earlier than `hour`.
+      ingestHour: num("GLOBAL_INGEST_HOUR", 6),
     },
   },
 

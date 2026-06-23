@@ -10,42 +10,20 @@
 // WAITING_FOR_APPROVAL | COMPLETED.
 import { prisma } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
-import { runIngestion } from "../services/ingestion/ingestion-orchestrator.js";
-import { scoreJobMatch } from "../services/matching/match-scorer.js";
 import { buildProfileSnapshot } from "../services/matching/profile-snapshot.js";
-import { selectTopMatches, type ScoredJob } from "../services/matching/select-matches.js";
-import type { ParsedJob } from "../services/job-discovery/job-parser.js";
+import { generateCandidates } from "../services/matching/candidate-generator.js";
+import { rerankCandidates } from "../services/matching/rerank.js";
+import { selectTopMatches } from "../services/matching/select-matches.js";
 import { generateApplicationDocuments } from "../services/application/application-generator.js";
 import { remainingApplications, getPlanLimits } from "../services/billing/usage-limits.js";
 import { notifyRunCompleted } from "../services/notifications/email-service.js";
 
 const WORKER_NAME = "application-pipeline-worker";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toParsedJob(job: any): ParsedJob {
-  return {
-    title: job.title,
-    company: job.company,
-    location: job.location ?? null,
-    isRemote: job.isRemote ?? false,
-    salaryMin: job.salaryMin ?? null,
-    salaryMax: job.salaryMax ?? null,
-    salaryCurrency: job.salaryCurrency ?? null,
-    description: job.descriptionClean ?? job.description ?? "",
-    requirements: (job.requirementsJson as string[]) ?? [],
-    skills: (job.skillsJson as string[]) ?? [],
-    experienceMin: job.experienceMin ?? null,
-    experienceMax: job.experienceMax ?? null,
-    atsPlatform: job.atsPlatform ?? null,
-    workAuthorization: job.workAuthorization ?? null,
-    jobUrl: job.jobUrl ?? null,
-  };
-}
-
 /**
- * Score the run's discovered jobs and generate applications for shortlisted ones.
- * Assumes ingestion has already populated Job rows for the run. Updates run
- * metrics and status; never throws (records failure on the run).
+ * Two-stage match for a run: retrieve candidates from the global pool (stage A),
+ * rerank + materialize per-user Jobs/Matches (stage B), then generate applications
+ * for the best shortlist. Updates run metrics and status; never throws.
  */
 export async function runApplicationPipeline(runId: string): Promise<void> {
   const run = await prisma.applicationRun.findUnique({ where: { id: runId } });
@@ -78,8 +56,6 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
       orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
     });
 
-    const jobs = await prisma.job.findMany({ where: { runId, userId }, orderBy: { ingestedAt: "desc" } });
-
     await prisma.applicationRun.update({ where: { id: runId }, data: { status: "SCORING" } });
 
     // Jobs the user has ALREADY applied to (any run) — never re-surface them.
@@ -89,30 +65,15 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
     });
     const alreadyApplied = new Set(appliedRows.map((r) => r.jobId).filter((v): v is string => Boolean(v)));
 
-    // Score EVERY discovered job, then globally rank — so the shortlist is the
-    // BEST `cap` matches, not the first `cap` over threshold in discovery order.
-    const scored: ScoredJob[] = [];
-    for (const job of jobs) {
-      const result = await scoreJobMatch(toParsedJob(job), snapshot);
-      await prisma.jobMatch.upsert({
-        where: { jobId_userId: { jobId: job.id, userId } },
-        create: {
-          jobId: job.id, userId, score: result.score, decision: result.decision,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          reasonsJson: result.reasons as any, risksJson: result.risks as any,
-        },
-        update: {
-          score: result.score, decision: result.decision,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          reasonsJson: result.reasons as any, risksJson: result.risks as any,
-        },
-      });
-      scored.push({
-        jobId: job.id, score: result.score, decision: result.decision,
-        company: job.company, title: job.title,
-        jobUrl: job.applyUrl ?? job.jobUrl ?? null, atsPlatform: job.atsPlatform ?? null,
-      });
-    }
+    // Stage A: cheap vector + filter retrieval from the global pool (~200 candidates).
+    // Stage B: LLM-rerank only the top slice and materialize per-user Job/JobMatch.
+    // The result is the BEST matches, scored — not "first cap in discovery order".
+    const candidates = await generateCandidates(userId, snapshot);
+    await prisma.applicationRun.update({
+      where: { id: runId },
+      data: { jobsDiscovered: candidates.length },
+    });
+    const scored = await rerankCandidates(candidates, snapshot, userId, runId);
 
     // Diversity: don't let one employer dominate the day's shortlist. At most
     // ~1/3 of the cap (min 2) from a single company, then fill by next-best score.
@@ -175,14 +136,13 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
   }
 }
 
-/** Full run: discover jobs (ingestion) then score + generate applications. */
+/**
+ * Full per-user run: two-stage match against the shared global pool, then generate
+ * applications. Job discovery is NO LONGER per-run — the pool is kept fresh by the
+ * scheduled global ingestor (runGlobalIngestion), so this reads from it directly.
+ */
 export async function runFullPipeline(runId: string): Promise<void> {
-  await runIngestion(runId);
-  const run = await prisma.applicationRun.findUnique({ where: { id: runId } });
-  // Only proceed to generation if ingestion completed (not FAILED/CANCELLED).
-  if (run?.status === "COMPLETED") {
-    await runApplicationPipeline(runId);
-  }
+  await runApplicationPipeline(runId);
 }
 
 /** Fire-and-forget trigger for the full pipeline. */

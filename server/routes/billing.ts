@@ -2,8 +2,13 @@ import { Router } from "express";
 import { asyncHandler } from "../lib/async-handler.js";
 import { prisma } from "../lib/db.js";
 import { config } from "../lib/config.js";
+import { requireAuth } from "../lib/auth-middleware.js";
+import { requireAdmin } from "../middleware/require-admin.js";
 
 export const billingRouter = Router();
+
+// Executive/company-wide financials — admin only. (Was previously unprotected.)
+billingRouter.use(requireAuth, requireAdmin);
 
 const round2 = (n: number) => parseFloat(n.toFixed(2));
 

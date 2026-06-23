@@ -2,6 +2,8 @@ import { logger } from "../lib/logger.js";
 import { config } from "../lib/config.js";
 import { prisma } from "../lib/db.js";
 import { createIngestionRun } from "../services/ingestion/ingestion-orchestrator.js";
+import { runGlobalIngestion } from "../services/ingestion/global-ingestor.js";
+import { syncRegistry } from "../services/ingestion/registry-sync.js";
 import { triggerFullPipeline } from "./application-pipeline.js";
 import { remainingApplications } from "../services/billing/usage-limits.js";
 
@@ -19,9 +21,34 @@ let timer: NodeJS.Timeout | null = null;
 // Skip re-scanning once the day's batch has been dispatched (the DB guard remains
 // the source of truth across restarts; this is just an optimization).
 let lastDispatchDate: string | null = null;
+// Same idea for the once-per-day global pool refresh.
+let lastIngestDate: string | null = null;
 
 function localDateKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/**
+ * Refresh the shared global job pool at most once per local day, at/after
+ * `ingestHour`. User-agnostic — runs before the per-user dispatch so runs read a
+ * fresh pool. Exported for tests. Awaited so a same-tick dispatch sees the result.
+ */
+export async function maybeRunGlobalIngestion(): Promise<boolean> {
+  const now = new Date();
+  const today = localDateKey(now);
+  if (now.getHours() < config.automation.scheduler.ingestHour) return false;
+  if (lastIngestDate === today) return false;
+  lastIngestDate = today;
+  try {
+    // Refresh the company registry from the public list first (fail-soft, no-op
+    // when unconfigured), so the day's ingestion sees any newly-added companies.
+    await syncRegistry().catch((err) => logger.error({ err: String(err) }, "Registry sync error"));
+    await runGlobalIngestion();
+    return true;
+  } catch (err) {
+    logger.error({ err: String(err) }, "Daily scheduler: global ingestion failed");
+    return false;
+  }
 }
 
 /** Start a "scheduled" run for each eligible active subscriber. Exported for tests. */
@@ -88,9 +115,13 @@ export function startDailyScheduler(): void {
   );
 
   timer = setInterval(() => {
-    dispatchDailyRuns().catch((err) => {
-      logger.error({ err: String(err) }, "Daily scheduler tick error");
-    });
+    // Refresh the global pool first (once/day at ingestHour), then dispatch the
+    // per-user runs (once/day at hour) which read from it.
+    void maybeRunGlobalIngestion()
+      .then(() => dispatchDailyRuns())
+      .catch((err) => {
+        logger.error({ err: String(err) }, "Daily scheduler tick error");
+      });
   }, intervalMs);
   // Don't keep the process alive solely for this timer.
   timer.unref?.();

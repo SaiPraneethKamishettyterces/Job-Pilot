@@ -15,6 +15,7 @@ model User {
   passwordHash   String?
   authProviderId String?  @unique
   avatarUrl      String?
+  isAdmin        Boolean  @default(false)
   onboardingDone Boolean  @default(false)
   emailVerified  Boolean  @default(false)
   emailVerifiedAt DateTime?
@@ -213,19 +214,148 @@ model JobSource {
   baseUrl   String?
   platform  String
   isActive  Boolean  @default(true)
+  // Platform-specific params (e.g. Workday host/tenant/site) for the registry.
+  configJson Json?
+  // Verification/health — populated as the ingestor crawls boards. Drives crawl
+  // rotation (least-recently-checked first) and auto-deactivation of dead boards.
+  lastCheckedAt DateTime?
+  lastSuccessAt DateTime?
+  activeJobCount Int?
   createdAt DateTime @default(now())
   jobs      Job[]
+  postings  JobPosting[]
+
+  @@index([isActive, lastCheckedAt])
 }
 
-// T2 — job_candidates. A normalized job row produced by an ingestion run.
-// Rows are owned by a user (denormalized per the T2 design) so each user has
-// their own candidate set, deduped within their own rows via dedupeKey.
+// Admin-configurable per-source settings for the PAID Apify scraper track. The
+// admin dashboard toggles `enabled` and sets `maxJobsPerRun` (the cost cap passed
+// to each actor). Jobright has no actor → its row stays disabled.
+model ScraperSourceConfig {
+  id            String   @id @default(cuid())
+  sourceKey     String   @unique // linkedin | indeed | hiringcafe | jobright
+  enabled       Boolean  @default(false)
+  maxJobsPerRun Int      @default(25)
+  notesJson     Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ─── Global job pool ─────────────────────────────────────────────────────────
+// One row per real-world posting, user-agnostic and deduped across ALL sources
+// and ALL users (vs. the per-user `Job` rows). Written by the scheduled global
+// ingestor; read by per-user candidate generation (vector ANN + hard filters).
+// This is the "daily dump all jobs into one location" pool.
+model JobPosting {
+  id                String   @id @default(cuid())
+  sourceId          String?
+  source            JobSource? @relation(fields: [sourceId], references: [id])
+
+  // Provenance
+  sourceName        String?  // greenhouse | lever | ashby | workable | remotive | remoteok | adzuna | themuse | usajobs | arbeitnow
+  sourceJobId       String?
+  atsPlatform       String?
+  jobUrl            String?
+  applyUrl          String?
+
+  // Core fields (same shape as Job, minus userId/runId)
+  title             String
+  normalizedTitle   String?
+  company           String
+  companyDomain     String?
+  department        String?
+  industry          String?
+  location          String?
+  isRemote          Boolean?
+  remoteType        String?  // onsite | hybrid | remote | unknown
+  employmentType    String?
+  seniority         String?
+
+  // Compensation
+  salaryMin         Int?
+  salaryMax         Int?
+  salaryCurrency    String?
+  salaryPeriod      String?
+  salaryTextRaw     String?
+
+  // Work authorization
+  visaSponsored     Boolean?
+  workAuthorization String?
+  sponsorshipNotes  String?
+
+  // Extracted content
+  description       String?  @db.Text
+  descriptionClean  String?  @db.Text
+  requirementsJson  Json     @default("[]")
+  skillsJson        Json     @default("[]")
+  toolsJson         Json     @default("[]")
+  experienceMin     Int?
+  experienceMax     Int?
+
+  // pgvector embedding — Prisma can't type this; written/queried via raw SQL.
+  // Dimension 768 matches the default embed model (text-embedding-004). The
+  // column, the `vector` extension, and the HNSW ANN index are created in the
+  // hand-authored migration (Prisma emits only this Unsupported placeholder).
+  embedding         Unsupported("vector(768)")?
+  embeddedAt        DateTime?
+  embedModel        String?
+
+  // GLOBAL dedup identity: `${source}:${company}:${sourceJobId}` (lowercased),
+  // computed by normalizeJob. Upserted on by the ingestor (one row per posting).
+  dedupeKey         String   @unique
+  contentHash       String?
+
+  // Lifecycle / freshness
+  postingStatus     String?  // active | closed | unknown
+  postedAt          DateTime?
+  expiresAt         DateTime?
+  firstSeenAt       DateTime @default(now())
+  lastSeenAt        DateTime @default(now())
+  ingestRunId       String?  // optional pointer to the GlobalIngestRun that last touched it
+  rawJson           Json?
+  schemaVersion     String?  @default("global.v1")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  jobs              Job[]    // per-user references back into the pool
+
+  @@index([company])
+  @@index([postingStatus, postedAt])
+  @@index([remoteType])
+}
+
+// Pool-level ingestion metrics for the scheduled global ingestor (the analog of
+// ApplicationRun, but user-agnostic). Tracks one global fetch cycle.
+model GlobalIngestRun {
+  id                 String    @id @default(cuid())
+  sourceTag          String    @default("free") // free (ATS + aggregators) | apify (paid scrapers)
+  status             String    @default("CREATED") // CREATED | FETCHING | EMBEDDING | COMPLETED | FAILED
+  boardsFetched      Int       @default(0)
+  keywordsUsed       Int       @default(0) // distinct demand role-keywords steering search APIs
+  postingsDiscovered Int       @default(0)
+  postingsInserted   Int       @default(0)
+  postingsUpdated    Int       @default(0)
+  postingsEmbedded   Int       @default(0)
+  errorMessage       String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+// T2 — per-user job row. In the global-pool architecture this is a THIN per-user
+// handle: a candidate materialized for a specific user from the shared JobPosting
+// pool (postingId set), OR a manually pasted job not in the pool (postingId null,
+// fields inline). Application.jobId / JobMatch.jobId reference this, so the
+// downstream document pipeline is unaffected by the pool refactor.
 model Job {
   id                String      @id @default(cuid())
   userId            String?
   user              User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
   runId             String?
   run               ApplicationRun? @relation("RunJobs", fields: [runId], references: [id])
+  postingId         String?     // link to the global pool (null = manual paste)
+  posting           JobPosting? @relation(fields: [postingId], references: [id])
   sourceId          String?
   source            JobSource?  @relation(fields: [sourceId], references: [id])
 
@@ -271,10 +401,7 @@ model Job {
   experienceMin     Int?
   experienceMax     Int?
 
-  // Embedding (stubbed in base version — populated in the matching milestone)
-  embeddingJson     Json?
-
-  // Dedup / integrity
+  // Dedup / integrity (embeddings now live on JobPosting.embedding in the pool)
   dedupeKey         String?
   contentHash       String?
 
@@ -291,7 +418,7 @@ model Job {
   matches           JobMatch[]
   applications      Application[]
 
-  @@unique([userId, dedupeKey])
+  @@unique([userId, postingId])
   @@index([userId, runId])
   @@index([company])
 }
@@ -305,6 +432,10 @@ model JobMatch {
   decision    String
   reasonsJson Json     @default("[]")
   risksJson   Json     @default("[]")
+  // Two-stage retrieval provenance (additive): how this match was reached.
+  stage       String?  // candidate | reranked
+  vectorScore Float?   // cosine similarity from candidate generation (stage A)
+  featureScore Float?  // deterministic feature score before LLM rerank (stage B)
   createdAt   DateTime @default(now())
 
   @@unique([jobId, userId])

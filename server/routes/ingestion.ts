@@ -4,7 +4,9 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { notFound } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { prisma } from "../lib/db.js";
-import { createIngestionRun, triggerIngestion } from "../services/ingestion/ingestion-orchestrator.js";
+import { createIngestionRun } from "../services/ingestion/ingestion-orchestrator.js";
+import { triggerFullPipeline } from "../workers/application-pipeline.js";
+import { triggerGlobalIngestion } from "../services/ingestion/global-ingestor.js";
 
 export const ingestionRouter = Router();
 
@@ -51,9 +53,18 @@ ingestionRouter.post("/start", requireAuth, asyncHandler(async (req: AuthRequest
   }
 
   const run = await createIngestionRun(userId, "manual_test");
-  triggerIngestion(run.id);
-  logger.info({ userId, runId: run.id }, "Manual ingestion run started");
-  res.status(202).json({ message: "Ingestion run started", run: serializeRun(run) });
+  // Two-stage match against the shared global pool, then generate applications.
+  triggerFullPipeline(run.id);
+  logger.info({ userId, runId: run.id }, "Manual run started (two-stage match)");
+  res.status(202).json({ message: "Run started", run: serializeRun(run) });
+}));
+
+// POST /api/ingestion/global — refresh the shared global job pool (dev/test/admin).
+// User-agnostic; normally driven by the daily scheduler. Returns immediately.
+ingestionRouter.post("/global", requireAuth, asyncHandler(async (_req: AuthRequest, res) => {
+  triggerGlobalIngestion();
+  logger.info("Manual global pool refresh triggered");
+  res.status(202).json({ message: "Global ingestion started" });
 }));
 
 // GET /api/ingestion — list the current user's ingestion runs (newest first).

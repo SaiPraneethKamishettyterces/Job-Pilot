@@ -23,6 +23,7 @@ import { ingestionRouter } from "./routes/ingestion.js";
 import { filesRouter } from "./routes/files.js";
 import { activityRouter } from "./routes/activity.js";
 import { accountRouter } from "./routes/account.js";
+import { adminRouter } from "./routes/admin.js";
 import { startRetryWorker } from "./workers/retry-worker.js";
 import { startDailyScheduler } from "./workers/daily-scheduler.js";
 import { ensurePlans } from "./services/billing/plan-catalog.js";
@@ -78,6 +79,7 @@ app.use("/api/ingestion", ingestionRouter);
 app.use("/api/files", filesRouter);
 app.use("/api/activity", activityRouter);
 app.use("/api/account", accountRouter);
+app.use("/api/admin", adminRouter);
 
 // JSON 404 for any unmatched API route (before the SPA catch-all below).
 app.use("/api", notFoundHandler);
