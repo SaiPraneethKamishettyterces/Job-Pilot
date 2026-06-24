@@ -15,9 +15,7 @@ import { loadCandidateProfile } from "../services/profile/candidate-profile.js";
 import { fillApplication } from "../services/automation/form-filler.js";
 import { mapFillCodeToStatus } from "../services/application/status-map.js";
 import type { ApplicationPackage } from "../services/application/application-package.js";
-import { jobRepository } from "../repositories/job-repository.js";
-import { fetchUrlText, parseJobDescription } from "../services/job-discovery/job-parser.js";
-import { detectAdapter } from "../../shared/autofill/adapter.js";
+import { parseAndCreateApplication, findApplicationByUrl, ensurePackage } from "../services/application/apply-from-url.js";
 
 export const applicationsRouter = Router();
 
@@ -85,78 +83,41 @@ applicationsRouter.post("/from-url", requireAuth, aiLimiter, asyncHandler(async 
   const profile = await loadCandidateProfile(userId);
   if (!profile) throw badRequest("Complete your profile before applying from a link.");
 
-  const adapter = detectAdapter(url);
-
-  // Fetch + parse the posting. Convert raw fetch/parse failures into friendly 400s.
-  let jobData;
-  try {
-    const text = await fetchUrlText(url);
-    jobData = await parseJobDescription(text, url);
-  } catch {
-    throw badRequest("We couldn't read that link. Paste the public job posting URL (the page with the Apply button), or try again.");
-  }
-  if (!jobData?.title || !jobData?.company) {
-    throw badRequest("That page didn't look like a job posting. Paste the direct posting URL.");
-  }
-
-  // Create a Job row (generateApplicationDocuments reads the JD off application.job)
-  // using the same mapping as POST /api/jobs. No JobMatch/scoring — the user chose this job.
-  const job = await jobRepository.createJob({
-    jobUrl: jobData.jobUrl ?? url,
-    title: jobData.title,
-    company: jobData.company,
-    location: jobData.location,
-    isRemote: jobData.isRemote,
-    salaryMin: jobData.salaryMin,
-    salaryMax: jobData.salaryMax,
-    salaryCurrency: jobData.salaryCurrency,
-    description: jobData.description,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    requirementsJson: jobData.requirements as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    skillsJson: jobData.skills as any,
-    experienceMin: jobData.experienceMin,
-    experienceMax: jobData.experienceMax,
-    atsPlatform: jobData.atsPlatform,
-    workAuthorization: jobData.workAuthorization,
-  });
-
-  const application = await prisma.application.create({
-    data: {
-      userId,
-      jobId: job.id,
-      company: jobData.company,
-      roleTitle: jobData.title,
-      jobUrl: jobData.jobUrl ?? url,
-      status: "DISCOVERED" as never,
-    },
-  });
-  await prisma.applicationEvent.create({
-    data: { applicationId: application.id, type: "created_from_link", description: `Created from pasted link (${adapter.vendorLabel})` },
-  });
-
-  logger.info({ userId, applicationId: application.id, adapter: adapter.id }, "Application created from pasted link");
+  const { applicationId, jobData, adapter } = await parseAndCreateApplication(userId, url);
+  logger.info({ userId, applicationId, adapter: adapter.id }, "Application created from pasted link");
   res.status(201).json({
-    applicationId: application.id,
-    job: {
-      title: jobData.title,
-      company: jobData.company,
-      location: jobData.location,
-      isRemote: jobData.isRemote,
-      salaryMin: jobData.salaryMin,
-      salaryMax: jobData.salaryMax,
-      salaryCurrency: jobData.salaryCurrency,
-      skills: jobData.skills ?? [],
-      requirements: jobData.requirements ?? [],
-      atsPlatform: jobData.atsPlatform,
-    },
-    adapter: {
-      id: adapter.id,
-      vendorLabel: adapter.vendorLabel,
-      capabilities: adapter.capabilities,
-      guidance: adapter.guidance ?? null,
-    },
+    applicationId,
+    job: jobData,
+    adapter: { id: adapter.id, vendorLabel: adapter.vendorLabel, capabilities: adapter.capabilities, guidance: adapter.guidance ?? null },
   });
+}));
+
+// POST /api/applications/resolve-by-url — extension auto-detect (no manual ID).
+// Given the URL of the tab the user has open, find the matching application (or
+// create one from the URL), ensure an autofill package exists, and return it so
+// the extension can fill immediately. Declared ABOVE "/:id" (segment-capture rule).
+applicationsRouter.post("/resolve-by-url", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
+  const parsed = applyFromUrlSchema.safeParse(req.body);
+  if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? "Provide the page URL");
+  const userId = req.userId!;
+  const { url } = parsed.data;
+
+  const profile = await loadCandidateProfile(userId);
+  if (!profile) throw badRequest("Complete your profile before autofilling.");
+
+  // 1) Reuse an existing application for this URL; 2) otherwise create from the URL.
+  let applicationId = await findApplicationByUrl(userId, url);
+  let created = false;
+  if (!applicationId) {
+    const res2 = await parseAndCreateApplication(userId, url);
+    applicationId = res2.applicationId;
+    created = true;
+  }
+
+  // Ensure the autofill package exists (build on the fly if needed — fast, no LLM).
+  const pkg = await ensurePackage(applicationId, userId);
+  logger.info({ userId, applicationId, created, adapterId: pkg.adapterId }, "Resolved application by URL for extension");
+  res.json({ applicationId, created, package: pkg });
 }));
 
 // GET /api/applications/:id — full detail incl generated documents + answers.

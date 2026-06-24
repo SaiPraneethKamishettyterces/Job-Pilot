@@ -37,6 +37,16 @@ export async function fetchPackage(cfg: ApiConfig, applicationId: string): Promi
   return pkg;
 }
 
+// Auto-detect: resolve the application for the page URL the user has open (finds an
+// existing application or creates one from the URL), and return its autofill package
+// — so the extension needs NO manually-pasted Application ID.
+export async function resolveByUrl(
+  cfg: ApiConfig,
+  url: string,
+): Promise<{ applicationId: string; created: boolean; package: WireApplicationPackage }> {
+  return req(cfg, `/api/applications/resolve-by-url`, { method: "POST", body: JSON.stringify({ url }) });
+}
+
 export interface AnswerResult {
   answer: string | null;
   needsUserAction: boolean;

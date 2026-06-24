@@ -1,6 +1,7 @@
 // Popup logic — vanilla TS (no framework, keeps the build trivial). Stores config
-// in chrome.storage.local, sends fill / mark-applied messages to the content
-// script in the active tab, and renders the report (incl. items needing review).
+// in chrome.storage.local, tells the content script to fill the CURRENT tab (the
+// content script auto-detects which application matches the page — no ID to paste),
+// and renders the report. "Mark applied" uses the application id returned by the fill.
 
 import type { ApiConfig } from "../lib/api.js";
 import type { FillReport } from "../../../shared/autofill/package-types.js";
@@ -8,7 +9,6 @@ import type { FillReport } from "../../../shared/autofill/package-types.js";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const els = {
-  appId: $("appId") as HTMLInputElement,
   baseUrl: $("baseUrl") as HTMLInputElement,
   token: $("token") as HTMLInputElement,
   fill: $("fill") as HTMLButtonElement,
@@ -17,13 +17,11 @@ const els = {
   status: $("status") as HTMLDivElement,
 };
 
-interface Stored extends ApiConfig {
-  lastAppId?: string;
-}
+let lastApplicationId: string | null = null;
 
-async function load(): Promise<Stored> {
-  const s = (await chrome.storage.local.get(["baseUrl", "token", "lastAppId"])) as Partial<Stored>;
-  return { baseUrl: s.baseUrl ?? "http://localhost:3001", token: s.token ?? "", lastAppId: s.lastAppId };
+async function load(): Promise<ApiConfig> {
+  const s = (await chrome.storage.local.get(["baseUrl", "token"])) as Partial<ApiConfig>;
+  return { baseUrl: s.baseUrl ?? "http://localhost:3001", token: s.token ?? "" };
 }
 
 function setStatus(html: string, cls = ""): void {
@@ -37,12 +35,11 @@ async function activeTabId(): Promise<number> {
   return tab.id;
 }
 
-function renderReport(r: FillReport): void {
+function renderReport(r: FillReport, created: boolean): void {
   const lines: string[] = [`<span class="ok">✓ Filled ${r.filledCount} field(s).</span>`];
+  if (created) lines.push(`<span class="sub">New application created for this page.</span>`);
   if (r.stepsAdvanced) lines.push(`Advanced ${r.stepsAdvanced} step(s).`);
-  if (r.blocker) {
-    lines.push(`<span class="err">Stopped: ${r.blocker.replace("_", " ")} — handle it yourself, then re-run.</span>`);
-  }
+  if (r.blocker) lines.push(`<span class="err">Stopped: ${r.blocker.replace("_", " ")} — handle it yourself, then re-run.</span>`);
   if (r.blanks.length) {
     lines.push(`<div class="review"><b>${r.blanks.length} required field(s) still blank:</b><ul>${r.blanks.map((b) => `<li>${escapeHtml(b.label)}</li>`).join("")}</ul></div>`);
   }
@@ -61,7 +58,14 @@ async function init(): Promise<void> {
   const cfg = await load();
   els.baseUrl.value = cfg.baseUrl;
   els.token.value = cfg.token;
-  if (cfg.lastAppId) els.appId.value = cfg.lastAppId;
+
+  // The bridge content script auto-connects the extension whenever you're logged
+  // into JobPilot in the browser — so normally no manual token entry is needed.
+  if (cfg.token) {
+    setStatus('<span class="ok">✓ Connected to JobPilot.</span> Open a job application page and click Fill.');
+  } else {
+    setStatus('Not connected yet — open JobPilot and log in, then reopen this. (Or paste a token in Settings.)');
+  }
 
   els.save.onclick = async () => {
     await chrome.storage.local.set({ baseUrl: els.baseUrl.value.trim(), token: els.token.value.trim() });
@@ -69,27 +73,31 @@ async function init(): Promise<void> {
   };
 
   els.fill.onclick = async () => {
-    const applicationId = els.appId.value.trim();
-    if (!applicationId) return setStatus('<span class="err">Enter an Application ID.</span>', "err");
     const config: ApiConfig = { baseUrl: els.baseUrl.value.trim(), token: els.token.value.trim() };
-    if (!config.token) return setStatus('<span class="err">Set an access token in Settings.</span>', "err");
-    await chrome.storage.local.set({ lastAppId: applicationId });
-    setStatus("Filling…");
+    if (!config.token) return setStatus('<span class="err">Set an access token in Settings first.</span>', "err");
+    setStatus("Detecting this job & filling…");
+    els.fill.disabled = true;
     try {
-      const res = await chrome.tabs.sendMessage(await activeTabId(), { type: "JP_FILL", applicationId, config });
-      if (res?.ok) renderReport(res.report as FillReport);
-      else setStatus(`<span class="err">${escapeHtml(res?.error ?? "Fill failed")}</span>`, "err");
+      const res = await chrome.tabs.sendMessage(await activeTabId(), { type: "JP_FILL", config });
+      if (res?.ok) {
+        lastApplicationId = res.applicationId ?? null;
+        els.applied.disabled = !lastApplicationId;
+        renderReport(res.report as FillReport, Boolean(res.created));
+      } else {
+        setStatus(`<span class="err">${escapeHtml(res?.error ?? "Fill failed")}</span>`, "err");
+      }
     } catch (e) {
-      setStatus(`<span class="err">${escapeHtml(String(e))}. Open the application page first.</span>`, "err");
+      setStatus(`<span class="err">${escapeHtml(String(e))}. Open the job application page first, then click Fill.</span>`, "err");
+    } finally {
+      els.fill.disabled = false;
     }
   };
 
   els.applied.onclick = async () => {
-    const applicationId = els.appId.value.trim();
+    if (!lastApplicationId) return;
     const config: ApiConfig = { baseUrl: els.baseUrl.value.trim(), token: els.token.value.trim() };
-    if (!applicationId || !config.token) return setStatus('<span class="err">Need Application ID + token.</span>', "err");
     try {
-      const res = await chrome.tabs.sendMessage(await activeTabId(), { type: "JP_MARK_APPLIED", applicationId, config });
+      const res = await chrome.tabs.sendMessage(await activeTabId(), { type: "JP_MARK_APPLIED", applicationId: lastApplicationId, config });
       setStatus(res?.ok ? '<span class="ok">Marked as applied in JobPilot.</span>' : `<span class="err">${escapeHtml(res?.error ?? "Failed")}</span>`);
     } catch (e) {
       setStatus(`<span class="err">${escapeHtml(String(e))}</span>`, "err");

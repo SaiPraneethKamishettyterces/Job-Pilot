@@ -14,6 +14,7 @@
       button { width: 100%; padding: 9px; border: 0; border-radius: 7px; font-weight: 600; cursor: pointer; margin-top: 10px; }
       .primary { background: #2563eb; color: #fff; }
       .ghost { background: transparent; color: #2563eb; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
       details { margin-top: 8px; }
       summary { cursor: pointer; font-size: 12px; color: #888; }
       #status { margin-top: 12px; font-size: 13px; white-space: pre-wrap; }
@@ -25,13 +26,10 @@
   </head>
   <body>
     <h1>JobPilot Autofill</h1>
-    <p class="sub">Fills the form in this tab. You review &amp; click Submit — we never submit for you.</p>
-
-    <label for="appId">Application ID</label>
-    <input id="appId" placeholder="from JobPilot" />
+    <p class="sub">Open a job application page, then click Fill. We detect the job, fill the form, and stop before Submit — you review &amp; submit.</p>
 
     <button id="fill" class="primary">Fill this application</button>
-    <button id="applied" class="ghost">I submitted it — mark applied</button>
+    <button id="applied" class="ghost" disabled>I submitted it — mark applied</button>
 
     <div id="status"></div>
 

@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/lib/auth";
+import { ExtensionConnect } from "@/components/extension-connect";
 import { exportAccount, deleteAccount, getProfile, updatePreferences, type ProfileResponse } from "@/services/api";
 
 export function SettingsPage() {
@@ -90,6 +91,9 @@ export function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Autofill browser extension — one-click connect */}
+      <ExtensionConnect />
 
       {/* Application rules */}
       <Card>

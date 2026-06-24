@@ -6,6 +6,7 @@
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "http://localhost:3001/*",
+    "http://localhost:5173/*",
     "https://*.greenhouse.io/*",
     "https://*.lever.co/*",
     "https://*.ashbyhq.com/*",
@@ -50,6 +51,11 @@
       "js": ["src/content/main.ts"],
       "run_at": "document_idle",
       "all_frames": true
+    },
+    {
+      "matches": ["http://localhost:5173/*"],
+      "js": ["src/content/bridge.ts"],
+      "run_at": "document_idle"
     }
   ]
 }
