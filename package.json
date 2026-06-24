@@ -10,6 +10,8 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc -b && vite build && npm run build:admin && npm run build:server",
     "build:admin": "vite build --config vite.admin.config.ts",
+    "build:extension": "vite build --config vite.extension.config.ts",
+    "typecheck:extension": "tsc -p extension/tsconfig.json --noEmit",
     "build:server": "tsc -p tsconfig.server.json && npm run copy:assets",
     "copy:assets": "node -e \"require('fs').cpSync('server/skills','dist/server/skills',{recursive:true})\"",
     "typecheck": "tsc -b && tsc -p tsconfig.server.json --noEmit",
@@ -83,8 +85,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.28",
     "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
+    "@types/chrome": "^0.0.287",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/bcryptjs": "^2.4.6",

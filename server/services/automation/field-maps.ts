@@ -128,6 +128,70 @@ const LEVER_FIELDS: FieldSpec[] = [
   },
 ];
 
+// ── Phase A (1.7a): public, no-login boards ──────────────────────────────────
+// Best-effort platform-specific selectors. The engine's deterministic label-fill
+// + COMMON_FIELDS generic selectors cover anything these miss, so even partial
+// maps fill well. Selectors marked for live verification (see AUTOFILL_V2_PLAN.md
+// per-portal acceptance: confirm 100% fill on 2–3 real apps before "supported").
+
+// SmartRecruiters — jobs.smartrecruiters.com public application.
+const SMARTRECRUITERS_FIELDS: FieldSpec[] = [
+  { key: "first_name", label: "First name", required: true, getter: (u) => u.firstName,
+    selectors: ["#firstNameField", "input[name='firstName']", "input[autocomplete='given-name']"] },
+  { key: "last_name", label: "Last name", required: true, getter: (u) => u.lastName,
+    selectors: ["#lastNameField", "input[name='lastName']", "input[autocomplete='family-name']"] },
+  { key: "email", label: "Email", required: true, getter: (u) => u.email,
+    selectors: ["#emailField", "input[name='email']", "input[type='email']"] },
+  { key: "phone", label: "Phone", getter: (u) => u.phone,
+    selectors: ["#phoneNumberField", "input[name='phoneNumber']", "input[type='tel']"] },
+  { key: "linkedin", label: "LinkedIn", getter: (u) => u.linkedinUrl,
+    selectors: ["input[name*='linkedin' i]", "input[aria-label*='LinkedIn' i]"] },
+];
+
+// Recruitee — <company>.recruitee.com (fields use candidate[...] names).
+const RECRUITEE_FIELDS: FieldSpec[] = [
+  { key: "name", label: "Full name", required: true, getter: (u) => effectiveFullName(u),
+    selectors: ["input[name='candidate[name]']", "input[id*='name' i]", "input[autocomplete='name']"] },
+  { key: "email", label: "Email", required: true, getter: (u) => u.email,
+    selectors: ["input[name='candidate[email]']", "input[type='email']"] },
+  { key: "phone", label: "Phone", getter: (u) => u.phone,
+    selectors: ["input[name='candidate[phone]']", "input[type='tel']"] },
+];
+
+// Breezy — <company>.breezy.hr hosted application.
+const BREEZY_FIELDS: FieldSpec[] = [
+  { key: "name", label: "Full name", required: true, getter: (u) => effectiveFullName(u),
+    selectors: ["input[name='name']", "#name", "input[autocomplete='name']"] },
+  { key: "email", label: "Email", required: true, getter: (u) => u.email,
+    selectors: ["input[name='email']", "#email", "input[type='email']"] },
+  { key: "phone", label: "Phone", getter: (u) => u.phone,
+    selectors: ["input[name='phone']", "#phone", "input[type='tel']"] },
+];
+
+// Teamtailor — <company>.teamtailor.com (fields use candidate[...] names).
+const TEAMTAILOR_FIELDS: FieldSpec[] = [
+  { key: "first_name", label: "First name", required: true, getter: (u) => u.firstName,
+    selectors: ["input[name='candidate[first_name]']", "input[autocomplete='given-name']"] },
+  { key: "last_name", label: "Last name", required: true, getter: (u) => u.lastName,
+    selectors: ["input[name='candidate[last_name]']", "input[autocomplete='family-name']"] },
+  { key: "email", label: "Email", required: true, getter: (u) => u.email,
+    selectors: ["input[name='candidate[email]']", "input[type='email']"] },
+  { key: "phone", label: "Phone", getter: (u) => u.phone,
+    selectors: ["input[name='candidate[phone]']", "input[type='tel']"] },
+];
+
+// Jobvite — jobs.jobvite.com public application.
+const JOBVITE_FIELDS: FieldSpec[] = [
+  { key: "first_name", label: "First name", required: true, getter: (u) => u.firstName,
+    selectors: ["input[name='firstName']", "input[autocomplete='given-name']"] },
+  { key: "last_name", label: "Last name", required: true, getter: (u) => u.lastName,
+    selectors: ["input[name='lastName']", "input[autocomplete='family-name']"] },
+  { key: "email", label: "Email", required: true, getter: (u) => u.email,
+    selectors: ["input[name='email']", "input[type='email']"] },
+  { key: "phone", label: "Phone", getter: (u) => u.phone,
+    selectors: ["input[name='phone']", "input[type='tel']"] },
+];
+
 // Common fields most ATS forms ask for, with generic (attribute-contains)
 // selectors. Appended to every platform map for keys the platform-specific map
 // doesn't already define, so we prefill as much as the user's data allows.
@@ -198,6 +262,11 @@ export const FIELD_MAPS: Partial<Record<Platform, FieldSpec[]>> = {
   lever: withCommon(LEVER_FIELDS),
   ashby: withCommon(ASHBY_FIELDS),
   workable: withCommon(WORKABLE_FIELDS),
+  smartrecruiters: withCommon(SMARTRECRUITERS_FIELDS),
+  recruitee: withCommon(RECRUITEE_FIELDS),
+  breezy: withCommon(BREEZY_FIELDS),
+  teamtailor: withCommon(TEAMTAILOR_FIELDS),
+  jobvite: withCommon(JOBVITE_FIELDS),
 };
 
 // Per-platform CAPTCHA note surfaced to the user (they solve it before submit).
@@ -206,4 +275,9 @@ export const CAPTCHA_NOTE: Partial<Record<Platform, string>> = {
   lever: "Lever forms use hCaptcha — solve it before submitting.",
   ashby: "Ashby may show a verification challenge — complete it before submitting.",
   workable: "Workable may show a CAPTCHA — solve it before submitting.",
+  smartrecruiters: "SmartRecruiters may show a CAPTCHA — solve it before submitting.",
+  recruitee: "Recruitee may show a CAPTCHA — solve it before submitting.",
+  breezy: "Breezy may show a CAPTCHA — solve it before submitting.",
+  teamtailor: "Teamtailor may show a CAPTCHA — solve it before submitting.",
+  jobvite: "Jobvite may show a CAPTCHA — solve it before submitting.",
 };

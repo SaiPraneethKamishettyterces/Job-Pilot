@@ -88,4 +88,33 @@ describe("buildApplicationPackage", () => {
     expect(pkg.platform).toBe("unsupported");
     expect(pkg.warnings.some((w) => w.includes("Workday") && w.toLowerCase().includes("manually"))).toBe(true);
   });
+
+  it("builds standard fields for newly-added no-login boards (Phase A)", () => {
+    for (const [url, platform] of [
+      ["https://jobs.smartrecruiters.com/acme/123", "smartrecruiters"],
+      ["https://acme.recruitee.com/o/role", "recruitee"],
+      ["https://acme.breezy.hr/p/123", "breezy"],
+      ["https://career.teamtailor.com/jobs/123", "teamtailor"],
+      ["https://jobs.jobvite.com/acme/job/123", "jobvite"],
+    ] as const) {
+      const pkg = buildApplicationPackage({ jobId: "j", applyUrl: url, profile: profile(), resume: null });
+      expect(pkg.platform).toBe(platform);
+      expect(pkg.standardFields.find((f) => f.key === "email")?.value).toBe("sai@example.com");
+    }
+  });
+
+  it("stamps adapterId + capabilities; gated portals stay server-unsupported but extension-routed", () => {
+    const gh = buildApplicationPackage({ jobId: "j", applyUrl: "https://boards.greenhouse.io/a/1", profile: profile(), resume: null });
+    expect(gh.adapterId).toBe("greenhouse");
+    expect(gh.capabilities.runner).toBe("either");
+    expect(gh.capabilities.canAutoSubmit).toBe(false);
+
+    const wd = buildApplicationPackage({ jobId: "j", applyUrl: "https://acme.wd1.myworkdayjobs.com/job/1", profile: profile(), resume: null });
+    // Server can't fill it...
+    expect(wd.platform).toBe("unsupported");
+    // ...but the extension knows what it is and that it needs login + the extension runner.
+    expect(wd.adapterId).toBe("workday");
+    expect(wd.capabilities.requiresLogin).toBe(true);
+    expect(wd.capabilities.runner).toBe("extension");
+  });
 });

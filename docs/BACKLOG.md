@@ -26,6 +26,17 @@ _Foundation shipped: full-resume scoring + global top-N ranking + already-applie
 - ☐ Never resurface declined/archived jobs (extend the already-applied guard).
 - ☐ Quality eval: hand-label a sample, measure precision of the top-N, tune weights.
 
+### 1.6 Standardized job-match scoring skill/prompt  ☐
+_(A repeatable, transparent rubric the LLM/Claude follows every time it scores a job→resume match — so scores are consistent, explainable, and tunable rather than ad-hoc per call. Lives in `server/services/ai`/matching; complements 1.1's signals.)_
+- ☐ Define a **standard scoring rubric**: enumerate the factors (hard-skill overlap, seniority/title fit, years-of-experience fit, location/remote alignment, salary fit, industry/domain fit, posting recency, must-have/disqualifier checks, soft-skill/keyword signals) with explicit weights that sum to a normalized 0–100 score.
+- ☐ Author the scoring **skill/prompt**: a structured prompt that walks the model through each factor in order, scores each sub-factor with a short justification, then combines into the final weighted score (chain-of-thought → structured JSON output).
+- ☐ **Structured, machine-readable output**: force a schema — `{ overallScore, perFactor: [{factor, score, weight, reasoning}], mustHavesMet, disqualifiers, confidence }` — so results are storable, auditable, and drive the top-N ranking deterministically.
+- ☐ **Hard gates vs soft signals**: hard disqualifiers (missing must-have credential, visa/location impossibility) cap or zero the score regardless of other factors; everything else contributes proportionally.
+- ☐ **Consistency & calibration**: same input → same score (low/zero temperature, fixed rubric version); version the rubric so score changes are traceable; back-test against hand-labeled samples (ties into 1.1 quality eval).
+- ☐ **Explainability**: every score carries the per-factor reasoning so the user/admin can see *why* a job ranked where it did.
+- ☐ Make weights/rubric **configurable** (config-driven, not hard-coded) so scoring can be tuned without code changes.
+- ☐ Tests: rubric produces stable scores on fixtures; disqualifier gating works; output always conforms to the schema.
+
 ### 1.2 Broaden job sources (no-login boards only)  ☐
 - ☐ Audit market sources with public, no-login, no-CAPTCHA postings (Ashby public, Workable public, SmartRecruiters public API, Remotive/RemoteOK feeds, …). Record ToS for each.
 - ☐ Add a fetcher per viable source in `services/ingestion/ats-sources.ts` (mirror the Greenhouse/Lever pattern).
@@ -48,11 +59,46 @@ _Foundation shipped: semantic question→stored-answer matching (embeddings)._
 - ☐ Handle answer formats: free-text, yes/no, multi-select, scale, file.
 - ☐ Guardrails: never fabricate; always escalate low-confidence + sensitive/EEO to the user.
 
-### 1.5 Make signup/login-required portals (Workday, …) low-effort  ☐
+### 1.5 Make signup/login-required portals (Workday, …) low-effort  ◐
+_Superseded/expanded by **1.7 Autofill V2** below — the browser-extension path is
+the chosen way to make these portals low-effort. Keep these as acceptance criteria._
 - ☐ Per-portal detection → tailored, guided "how to apply" steps in the UI.
 - ☐ Pre-fill everything possible into the assisted package; minimize manual steps.
 - ☐ Decision: credential handling for these portals (default: guided manual login, do NOT store passwords) — respect ToS / no bot-protection bypass.
 - ☐ Track status through the manual steps; one-click "mark submitted" (reuse existing handoff).
+
+### 1.7 Autofill V2 — adapter core + browser extension  ◐
+_Full plan: `docs/AUTOFILL_V2_PLAN.md`. Decision: server-side Playwright cannot pass
+Workday/iCIMS/Taleo login + 2FA + email-verify walls and gets IP-blocked; the durable,
+ToS-respecting pattern (per Simplify/Huntr/LoopCV) is a **browser extension that fills
+the DOM in the user's authenticated session**, never stores credentials, never
+auto-submits. Goal: autofill works on ALL market portals at 100% fill._
+
+**⚠️ PRESERVE THE CURRENT GREENHOUSE FILLER.** The server-side Playwright engine
+(`server/services/automation/form-filler.ts`) already achieves ~100% auto-fill on
+Greenhouse — it is the **golden reference** and stays live and **untouched**. All V2
+work is **additive** (new files + re-export shims). Do NOT delete or rewrite the old
+path. Removing it is **1.7c below — gated on Plan B being proven across portals.**
+
+- **1.7a — Adapter core (server-side, additive):**
+  - ☐ `shared/autofill/adapter.ts`: `PlatformAdapter` interface + registry; Greenhouse adapter = reference.
+  - ☐ Migrate Greenhouse/Lever/Ashby/Workable maps into adapters; `field-maps.ts` re-exports (shim) so the working filler is unchanged — proven by existing tests staying green.
+  - ☐ Add adapters for public no-login boards (SmartRecruiters public, Recruitee, Breezy, Teamtailor, Jobvite public).
+  - ☐ Coverage report: % fillable per platform.
+- **1.7b — Browser extension (MV3) for gated portals + reliable default:**
+  - ☐ Scaffold MV3 extension (Vite + React popup + TS content script).
+  - ☐ Port the resolution ladder (deterministic label fill → semantic QA → re-loop) to a DOM engine; match the Greenhouse 100% baseline first.
+  - ☐ Wire to existing API (`GET …/:id` package, `POST …/answers`, `POST …/mark-applied`); extend package with `adapterId` + `capabilities` (backward-compatible).
+  - ☐ Workday adapter (detect tenant, fill by `data-automation-id` + label, advance steps, **hard stop before Submit**); then iCIMS/Taleo/SuccessFactors.
+  - ☐ Enforce primary rules in-extension: no credential storage, no auto-login, no auto-submit, sensitive/EEO + low-confidence escalation surfaced in popup.
+- **1.7c — Cutover (GATED — do later, only once 1.7b proven across portals):**
+  - ☐ Per-portal, decide whether the extension replaces the server-side path.
+  - ☐ **Only then** remove the superseded/commented-out server-side code.
+- **1.7 verification (each portal, 2–3 real apps):** 100% fillable fields filled;
+  no fabricated answers; sensitive/EEO + low-confidence escalated; no credentials
+  stored; no auto-submit; resume attached; coverage shows only Submit remaining.
+  _Note: login-gated end-to-end runs require the owner's authenticated browser —
+  cannot be fully automated in CI._
 
 ---
 
@@ -71,6 +117,18 @@ _(Depends on 2.1 for revenue/margin; uses indexes already added.)_
 - ☐ Cost attribution per run/application; admin-only aggregation endpoints.
 - ☐ Admin UI: recharts charts + tables, date ranges, per-user drill-down.
 - ☐ Admin-only access control.
+
+### 2.3 Per-user real-dollar spend limits across paid providers (Apify, Claude, …)  ☐
+_(Real-money guardrail layer. Builds on the `token-tracker` + usage service; complements 2.1 volume caps and 2.2 cost visibility.)_
+- ☐ Define a unified **cost model**: track real-dollar spend per user for every paid provider — Claude/Anthropic (tokens × model price), Apify (actor/compute units), and any other metered external service — normalized to USD.
+- ☐ Attribute cost at the source: route all paid calls through metered wrappers (Claude via `server/services/ai`/`token-tracker`; Apify via its ingestion wrapper) so every call records `{userId, provider, unitsUsed, usdCost, task}`.
+- ☐ **Per-user, whole-application limits**: a single configurable USD budget per user that aggregates across all providers (not separate per-provider caps the user has to reason about). Track spend-to-date against it.
+- ☐ **Limits must not degrade UX**: enforce gracefully — warn/throttle/queue and surface a clear in-app message as a user nears/hits their cap; never hard-crash a run mid-flight or leave an application in a broken state. Define soft (warn) vs hard (block new work) thresholds.
+- ☐ **Admin dashboard — visibility**: per-user spend clearly broken down by provider (Claude / Apify / other) and in total, with budget used vs remaining, trends, and which users are near/over limit. Surfaced prominently for the admin (I).
+- ☐ **Admin dashboard — configurability**: admin can set/change the per-user USD budget (global default + per-user override), set soft/hard thresholds, and reset/top-up budgets — all from the admin UI, no redeploy.
+- ☐ Provider price config: maintain editable per-model / per-actor USD rates so cost math stays accurate as Apify/Anthropic pricing changes.
+- ☐ Alerts: notify admin when a user crosses a threshold or when aggregate spend spikes.
+- ☐ Tests: cost attribution accuracy per provider; soft/hard threshold enforcement; graceful-degradation (no broken UX) at the cap.
 
 ---
 

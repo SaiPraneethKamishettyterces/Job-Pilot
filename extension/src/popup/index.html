@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JobPilot Autofill</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { width: 340px; margin: 0; font: 14px/1.45 system-ui, sans-serif; padding: 14px; }
+      h1 { font-size: 15px; margin: 0 0 2px; }
+      .sub { color: #888; font-size: 12px; margin: 0 0 12px; }
+      label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 3px; }
+      input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
+      button { width: 100%; padding: 9px; border: 0; border-radius: 7px; font-weight: 600; cursor: pointer; margin-top: 10px; }
+      .primary { background: #2563eb; color: #fff; }
+      .ghost { background: transparent; color: #2563eb; }
+      details { margin-top: 8px; }
+      summary { cursor: pointer; font-size: 12px; color: #888; }
+      #status { margin-top: 12px; font-size: 13px; white-space: pre-wrap; }
+      .review { background: #fef3c7; color: #92400e; padding: 8px; border-radius: 6px; margin-top: 8px; font-size: 12px; }
+      .ok { color: #15803d; }
+      .err { color: #b91c1c; }
+      ul { margin: 4px 0 0; padding-left: 18px; }
+    </style>
+  </head>
+  <body>
+    <h1>JobPilot Autofill</h1>
+    <p class="sub">Fills the form in this tab. You review &amp; click Submit — we never submit for you.</p>
+
+    <label for="appId">Application ID</label>
+    <input id="appId" placeholder="from JobPilot" />
+
+    <button id="fill" class="primary">Fill this application</button>
+    <button id="applied" class="ghost">I submitted it — mark applied</button>
+
+    <div id="status"></div>
+
+    <details>
+      <summary>Settings</summary>
+      <label for="baseUrl">JobPilot API URL</label>
+      <input id="baseUrl" placeholder="http://localhost:3001" />
+      <label for="token">Access token</label>
+      <input id="token" type="password" placeholder="paste from JobPilot" />
+      <button id="save" class="ghost">Save settings</button>
+    </details>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 import { detectPlatform, recognizeAts, vendorGuidance, type Platform } from "../automation/platform-detector.js";
 import { FIELD_MAPS, CAPTCHA_NOTE, COMMON_FIELDS_FALLBACK } from "../automation/field-maps.js";
 import { effectiveFullName, EEO_KEYS, type CandidateProfile } from "../profile/candidate-profile.js";
+import { detectAdapter, type AdapterId, type AdapterCapabilities } from "../../../shared/autofill/adapter.js";
 
 // Build an ApplicationPackage — the contract between the engine and the browser
 // extension (ported from Job_applying_agent/prepare/application_packager.py +
@@ -31,6 +32,13 @@ export interface ApplicationPackage {
   jobId: string;
   userId: string | null;
   platform: Platform;
+  // Autofill V2 (1.7): richer adapter id + capabilities so the browser extension
+  // knows how to DRIVE the portal (login-gated? multi-step? which runner?).
+  // Additive + backward-compatible — older consumers ignore these. `adapterId` is
+  // a superset of `platform` (it also names login-gated portals like "workday"
+  // that stay `platform: "unsupported"` server-side).
+  adapterId: AdapterId;
+  capabilities: AdapterCapabilities;
   applyUrl: string | null;
   generatedAt: string;
   resume: ResumeRef;
@@ -79,6 +87,7 @@ export interface BuildPackageInput {
 
 export function buildApplicationPackage(input: BuildPackageInput): ApplicationPackage {
   const platform = detectPlatform(input.applyUrl);
+  const adapter = detectAdapter(input.applyUrl);
   // Supported platforms get selector-driven autofill; recognized-but-unsupported
   // portals (Workday, iCIMS, …) still get a full copy/paste detail sheet so the
   // manual apply is mostly copying, not retyping.
@@ -138,6 +147,8 @@ export function buildApplicationPackage(input: BuildPackageInput): ApplicationPa
     jobId: input.jobId,
     userId: input.profile.userId,
     platform,
+    adapterId: adapter.id,
+    capabilities: adapter.capabilities,
     applyUrl: input.applyUrl,
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     resume,

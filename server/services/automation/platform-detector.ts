@@ -2,9 +2,23 @@
 // matching (ported from Job_applying_agent/apply/platform_detector.py). Adding a
 // new platform is a one-line change here plus a new field map + filler branch.
 
-export type Platform = "greenhouse" | "lever" | "ashby" | "workable" | "unsupported";
+export type Platform =
+  | "greenhouse"
+  | "lever"
+  | "ashby"
+  | "workable"
+  // Phase A (1.7a) — public, no-login boards (server-side autofill OK).
+  | "smartrecruiters"
+  | "recruitee"
+  | "breezy"
+  | "teamtailor"
+  | "jobvite"
+  | "unsupported";
 
 // ATSs we can prepare an autofill package for (have a field map + filler branch).
+// NOTE: login-gated portals (Workday, iCIMS, …) are deliberately NOT here — they
+// stay "unsupported" server-side because headless automation can't pass their
+// auth wall; the browser extension (1.7b) handles them. See docs/AUTOFILL_V2_PLAN.md.
 const SUPPORTED: Array<{ platform: Platform; match: string }> = [
   // Covers greenhouse.io, boards.greenhouse.io, job-boards.greenhouse.io.
   { platform: "greenhouse", match: "greenhouse.io" },
@@ -14,23 +28,26 @@ const SUPPORTED: Array<{ platform: Platform; match: string }> = [
   { platform: "ashby", match: "ashbyhq.com" },
   // Covers apply.workable.com / <company>.workable.com.
   { platform: "workable", match: "workable.com" },
+  // Phase A — public no-login boards.
+  { platform: "smartrecruiters", match: "smartrecruiters.com" },
+  { platform: "recruitee", match: "recruitee.com" },
+  { platform: "breezy", match: "breezy.hr" },
+  { platform: "teamtailor", match: "teamtailor.com" },
+  { platform: "jobvite", match: "jobvite.com" },
 ];
 
 // ATSs we can RECOGNIZE (so we can give the user an accurate message) but do not
 // yet auto-fill. Detecting these lets us say "Workday isn't auto-fillable yet"
 // instead of a generic "unsupported domain". Keyed by a vendor display name.
+// Login-gated / not-yet-fillable portals we still RECOGNIZE so we can message the
+// user accurately. (SmartRecruiters/Recruitee/Breezy/Teamtailor/Jobvite moved to
+// SUPPORTED in Phase A.) These remain extension-only (1.7b) or copy/paste-only.
 const RECOGNIZED_UNSUPPORTED: Array<{ vendor: string; matches: string[] }> = [
   { vendor: "Workday", matches: ["myworkdayjobs.com", "workday.com", ".wd1.", ".wd3.", ".wd5."] },
-  { vendor: "SmartRecruiters", matches: ["smartrecruiters.com"] },
   { vendor: "iCIMS", matches: ["icims.com"] },
-  { vendor: "Jobvite", matches: ["jobvite.com"] },
   { vendor: "BambooHR", matches: ["bamboohr.com"] },
-  { vendor: "Recruitee", matches: ["recruitee.com"] },
-  { vendor: "Breezy", matches: ["breezy.hr"] },
   { vendor: "Taleo", matches: ["taleo.net"] },
   { vendor: "SuccessFactors", matches: ["successfactors.com", "sapsf.com"] },
-  { vendor: "Teamtailor", matches: ["teamtailor.com"] },
-  { vendor: "Workday/Greenhouse embed", matches: ["jobvite", "myworkday"] },
 ];
 
 export function detectPlatform(url: string | null | undefined): Platform {
@@ -74,6 +91,11 @@ const VENDOR_LABEL: Partial<Record<Platform, string>> = {
   lever: "Lever",
   ashby: "Ashby",
   workable: "Workable",
+  smartrecruiters: "SmartRecruiters",
+  recruitee: "Recruitee",
+  breezy: "Breezy",
+  teamtailor: "Teamtailor",
+  jobvite: "Jobvite",
 };
 
 // Short, vendor-specific "how to apply" guidance for recognized-but-unsupported

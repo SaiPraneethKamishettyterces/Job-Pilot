@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "JobPilot Autofill",
+  "version": "0.1.0",
+  "description": "Fill job applications in your own browser session — including login-gated portals (Workday, iCIMS). Never submits for you; you review and click Submit.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "http://localhost:3001/*",
+    "https://*.greenhouse.io/*",
+    "https://*.lever.co/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.workable.com/*",
+    "https://*.smartrecruiters.com/*",
+    "https://*.recruitee.com/*",
+    "https://*.breezy.hr/*",
+    "https://*.teamtailor.com/*",
+    "https://*.jobvite.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.icims.com/*",
+    "https://*.taleo.net/*",
+    "https://*.successfactors.com/*",
+    "https://*.bamboohr.com/*"
+  ],
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_title": "JobPilot Autofill"
+  },
+  "background": {
+    "service_worker": "src/background/main.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://*.lever.co/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.workable.com/*",
+        "https://*.smartrecruiters.com/*",
+        "https://*.recruitee.com/*",
+        "https://*.breezy.hr/*",
+        "https://*.teamtailor.com/*",
+        "https://*.jobvite.com/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.icims.com/*",
+        "https://*.taleo.net/*",
+        "https://*.successfactors.com/*",
+        "https://*.bamboohr.com/*"
+      ],
+      "js": ["src/content/main.ts"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}
