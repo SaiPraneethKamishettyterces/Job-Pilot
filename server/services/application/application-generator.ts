@@ -97,10 +97,19 @@ export async function generateApplicationDocuments(applicationId: string): Promi
           data: {
             applicationId,
             type: "resume",
+            // fileUrl stays the DOCX (autofill/extension upload it). PDF is the
+            // human-friendly download surfaced in the UI alongside it.
             fileUrl: tailored.artifact.downloadPath,
             content: tailored.markdown,
+            metadataJson: {
+              analysis: tailored.analysis,
+              report: analysisReportMarkdown(tailored.analysis),
+              files: {
+                docxUrl: tailored.artifact.downloadPath,
+                pdfUrl: tailored.pdfArtifact.downloadPath,
+              },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            metadataJson: { analysis: tailored.analysis, report: analysisReportMarkdown(tailored.analysis) } as any,
+            } as any,
           },
         });
         documentTypes.push("resume");

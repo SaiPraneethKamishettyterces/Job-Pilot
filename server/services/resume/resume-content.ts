@@ -29,6 +29,7 @@ export const experienceSchema = z.object({
 export const projectSchema = z.object({
   name: z.string().default(""),
   tools: z.array(z.string()).default([]),
+  dates: z.string().nullish(),
   bullets: z.array(z.string()).default([]),
 });
 

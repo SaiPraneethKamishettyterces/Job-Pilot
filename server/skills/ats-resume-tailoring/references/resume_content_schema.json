@@ -67,6 +67,7 @@
         "properties": {
           "name": { "type": "string" },
           "tools": { "type": "array", "items": { "type": "string" } },
+          "dates": { "type": "string", "description": "Unchanged, verbatim from base resume (e.g. 'May 2025'). Omit if the base has none." },
           "bullets": { "type": "array", "items": { "type": "string" } }
         }
       }

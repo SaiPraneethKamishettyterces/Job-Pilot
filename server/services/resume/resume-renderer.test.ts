@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toMarkdown, toText, toDocx } from "./resume-renderer.js";
+import { toMarkdown, toText, toDocx, toPdf } from "./resume-renderer.js";
 import { resumeContentSchema } from "./resume-content.js";
 
 // Ported from Job_applying_agent/tests/test_resume_renderer.py.
@@ -35,5 +35,12 @@ describe("resume renderer", () => {
     expect(buf.length).toBeGreaterThan(1000);
     // DOCX is a zip → starts with PK.
     expect(buf.subarray(0, 2).toString("latin1")).toBe("PK");
+  });
+
+  it("produces a valid PDF buffer with the resume text", async () => {
+    const buf = await toPdf(content);
+    expect(buf.length).toBeGreaterThan(1000);
+    // PDF files begin with the "%PDF" magic header.
+    expect(buf.subarray(0, 4).toString("latin1")).toBe("%PDF");
   });
 });

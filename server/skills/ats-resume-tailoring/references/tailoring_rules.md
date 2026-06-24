@@ -10,6 +10,14 @@ they didn't work in, or impossible/unsupported achievements. You may improve
 wording, emphasize relevant work, reorganize content, and use reasonable
 business-impact language — but always within the truth of the base resume.
 
+**Named-tool hard rule:** a specific named tool/platform/library (e.g. AWS, BigQuery,
+Kubernetes, LangGraph) may appear in the tailored resume ONLY if that exact name —
+or an unambiguous equivalent the candidate clearly used — is present in the base
+resume. If the JD demands a tool the base resume does not contain, do NOT add the
+tool name; instead surface the closest TRUE capability the candidate has (rule 9),
+or list the gap under `weak_or_missing`/`missing_keywords` in the analysis. Reaching
+JD keyword coverage NEVER justifies inventing a tool the candidate doesn't have.
+
 ## 2. Do not change
 - **Personal information** — name, phone, email, LinkedIn/GitHub/portfolio URLs,
   location, work authorization. Fix only obvious spacing/alignment/capitalization.
@@ -31,10 +39,12 @@ of teams, stakeholders, workflows, business use cases, and tools, as long as it
 stays realistic and aligned with the original resume.
 
 ## 5. Professional summary
-3–4 lines, role-specific, recruiter-friendly. Position the candidate as a direct
-fit: strongest relevant experience + the most important JD tools/platforms/skills.
-No generic filler ("hard-working", "motivated", "team player") unless backed by
-specific work.
+3–4 lines, role-specific, recruiter-friendly. **Open with the exact target
+role/title + years of experience** (e.g. "Generative AI Engineer with 5+ years…"),
+matching the JD's title where the candidate's background supports it. Then position
+the candidate as a direct fit: strongest relevant experience + the most important
+JD tools/platforms/skills the candidate actually has. No generic filler
+("hard-working", "motivated", "team player") unless backed by specific work.
 
 ## 6. Bullet points
 Structure: **Action verb + work performed + tools/methods + business/technical
@@ -63,7 +73,8 @@ role; 3–5 for older roles; prioritize recent + relevant.
 
 ## 8. Project tailoring
 Modify existing projects to highlight job-relevant use cases — never invent fake
-projects. Emphasis by role type:
+projects. Keep each project's **dates verbatim** and re-tailor its name/tools/
+bullets toward the JD. Emphasis by role type:
 - **Data Engineering** → ETL/ELT, data modeling, data-quality checks, cloud,
   orchestration, SQL/Python/PySpark, scalable workflows.
 - **Analytics / BI** → dashboarding, KPI definition, stakeholder reporting,
@@ -99,3 +110,15 @@ every tool.
 ## 11. Tense & voice
 Present role → present tense; previous roles → past tense. No first person
 ("I/me/my"). No exaggeration.
+
+## 12. Calibrate to the candidate (profile + preferences)
+Tailoring depth must fit THIS candidate, not a generic template:
+- **Seniority** — match the language to the candidate's real level implied by their
+  years and scope (don't inflate a junior into a staff engineer, or flatten a
+  senior into an entry profile).
+- **User instructions/preferences** — when provided (target role, emphasis,
+  tone, roles to foreground/background, relocation, etc.), treat them as binding
+  constraints and shape ordering + emphasis accordingly, still within the truth.
+- **Relevance ordering** — lead with the experience, skills, and projects closest
+  to the JD; de-emphasize (don't delete) unrelated history. The most JD-relevant
+  evidence should be visible in the top third of the resume.

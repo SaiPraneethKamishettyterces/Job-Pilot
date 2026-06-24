@@ -82,6 +82,7 @@ export function toMarkdown(content: ResumeContent): string {
     for (const proj of content.projects) {
       const tools = (proj.tools ?? []).join(", ");
       out.push(`**${proj.name}**${tools ? ` | ${tools}` : ""}`);
+      if (proj.dates) out.push(`_${proj.dates}_`);
       for (const b of proj.bullets ?? []) out.push(`- ${b}`);
       out.push("");
     }
@@ -205,6 +206,7 @@ function buildChildren(content: ResumeContent): Paragraph[] {
       const head = [run(proj.name, 10.5, true)];
       if (tools) head.push(run(` | ${tools}`, 10));
       ps.push(para({ before: 4, children: head }));
+      if (proj.dates) ps.push(para({ children: [run(proj.dates, 10)] }));
       const bullets = proj.bullets ?? [];
       bullets.forEach((b, i) => ps.push(bullet(b, i === bullets.length - 1)));
     }
@@ -226,6 +228,114 @@ function buildChildren(content: ResumeContent): Paragraph[] {
   }
 
   return ps;
+}
+
+// ─── PDF ───────────────────────────────────────────────────────────────────
+// Mirrors the DOCX typography from buildChildren so DOCX and PDF look the same.
+// pdfkit ships only the standard-14 fonts, so we use Helvetica (a clean sans
+// the same family as Calibri for ATS purposes); the bytes stay fully
+// text-selectable so ATS parsers read every word. Letter, 0.5in margins.
+const PDF_MARGIN = 36; // 0.5in in points (72pt/in)
+const PDF_GREY = "#808080";
+
+export async function toPdf(content: ResumeContent): Promise<Buffer> {
+  // pdfkit is CJS; default import works under the repo's interop settings.
+  const { default: PDFDocument } = await import("pdfkit");
+  const doc = new PDFDocument({
+    size: "LETTER",
+    margins: { top: PDF_MARGIN, bottom: PDF_MARGIN, left: PDF_MARGIN, right: PDF_MARGIN },
+  });
+
+  const chunks: Buffer[] = [];
+  const done = new Promise<Buffer>((resolve, reject) => {
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
+
+  const REG = "Helvetica";
+  const BOLD = "Helvetica-Bold";
+  const left = doc.page.margins.left;
+  const usableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+  const pdfHeading = (text: string) => {
+    doc.moveDown(0.4);
+    doc.font(BOLD).fontSize(11).fillColor("black").text(text.toUpperCase(), left, doc.y);
+    const y = doc.y + 1;
+    doc.moveTo(left, y).lineTo(left + usableWidth, y).lineWidth(0.75).strokeColor(PDF_GREY).stroke();
+    doc.moveDown(0.3);
+  };
+
+  const pdfBullet = (text: string) => {
+    const indent = 11;
+    doc.font(REG).fontSize(10).fillColor("black")
+      .text(`•  ${text}`, left, doc.y, { width: usableWidth, indent, lineGap: 0.5 });
+  };
+
+  const c = content.contact;
+  doc.font(BOLD).fontSize(16).fillColor("black").text(c.name ?? "", { align: "center" });
+  const ct = contactLine(c);
+  if (ct) doc.font(REG).fontSize(9.5).fillColor("black").text(ct, { align: "center" });
+
+  if (content.professional_summary) {
+    pdfHeading("Professional Summary");
+    doc.font(REG).fontSize(10).fillColor("black").text(content.professional_summary, { width: usableWidth });
+  }
+
+  const skills = skillLines(content.technical_skills);
+  if (skills.length) {
+    pdfHeading("Technical Skills");
+    for (const line of skills) {
+      const [cat, ...rest] = line.split(": ");
+      const items = rest.join(": ");
+      doc.fontSize(10).fillColor("black")
+        .font(BOLD).text(`${cat}: `, left, doc.y, { continued: true })
+        .font(REG).text(items);
+    }
+  }
+
+  if (content.experience.length) {
+    pdfHeading("Professional Experience");
+    for (const role of content.experience) {
+      doc.moveDown(0.2);
+      doc.font(BOLD).fontSize(10.5).fillColor("black").text(`${role.title} | ${role.company}`, left, doc.y);
+      const sub = subLine(role.location, role.dates);
+      if (sub) doc.font(REG).fontSize(10).fillColor("black").text(sub);
+      for (const b of role.bullets ?? []) pdfBullet(b);
+    }
+  }
+
+  if (content.projects.length) {
+    pdfHeading("Projects");
+    for (const proj of content.projects) {
+      doc.moveDown(0.2);
+      const tools = (proj.tools ?? []).join(", ");
+      doc.fontSize(10.5).fillColor("black")
+        .font(BOLD).text(proj.name, left, doc.y, { continued: Boolean(tools) });
+      if (tools) doc.font(REG).fontSize(10).text(` | ${tools}`);
+      if (proj.dates) doc.font(REG).fontSize(10).fillColor("black").text(proj.dates, left, doc.y);
+      for (const b of proj.bullets ?? []) pdfBullet(b);
+    }
+  }
+
+  if (content.education.length) {
+    pdfHeading("Education");
+    for (const ed of content.education) {
+      doc.moveDown(0.2);
+      doc.font(BOLD).fontSize(10.5).fillColor("black").text(`${ed.degree} | ${ed.institution}`, left, doc.y);
+      const sub = subLine(ed.location, ed.dates);
+      if (sub) doc.font(REG).fontSize(10).fillColor("black").text(sub);
+      if (ed.details) doc.font(REG).fontSize(10).fillColor("black").text(ed.details);
+    }
+  }
+
+  if (content.certifications.length) {
+    pdfHeading("Certifications");
+    for (const x of content.certifications) pdfBullet(x);
+  }
+
+  doc.end();
+  return done;
 }
 
 export async function toDocx(content: ResumeContent): Promise<Buffer> {

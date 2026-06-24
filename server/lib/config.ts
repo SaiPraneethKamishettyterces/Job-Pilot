@@ -82,6 +82,15 @@ export const config = {
     modelFlash: optional("AI_MODEL_FLASH", "gemini-2.5-flash"),
     modelPro: optional("AI_MODEL_PRO", "gemini-2.5-pro"),
     embedModel: optional("AI_EMBED_MODEL", "text-embedding-004"),
+
+    // Which provider tailors resumes (Issue #77). Default Claude Sonnet for
+    // quality; set "local"/"openai" to route through the OpenAI-compatible
+    // provider instead (local-model workflow testing — no cloud, no key needed).
+    tailorProvider: optional("AI_TAILOR_PROVIDER", "anthropic"),
+    // Hard ceiling on cumulative Claude (Anthropic) spend in USD — a safety net so
+    // testing can't burn all credits. Enforced before each Anthropic call against
+    // the recorded AIUsageEvent ledger. <= 0 disables the cap (unlimited).
+    anthropicBudgetUsd: numFloat("ANTHROPIC_BUDGET_USD", 2),
   },
 
   // ── Job sources (free aggregator APIs) ───────────────────────────────────

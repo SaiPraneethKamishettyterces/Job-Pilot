@@ -1,4 +1,4 @@
-import { completeJson, hasAnthropic } from "../ai/ai-service.js";
+import { completeJson, hasProvider } from "../ai/ai-service.js";
 import { TASK_MODEL } from "../ai/model-config.js";
 import { buildTailorUserPrompt } from "../ai/prompts.js";
 import { recordUsage } from "../ai/usage-recorder.js";
@@ -12,7 +12,7 @@ import {
   type Contact,
   type TailorResult,
 } from "./resume-content.js";
-import { toDocx, toMarkdown } from "./resume-renderer.js";
+import { toDocx, toPdf, toMarkdown } from "./resume-renderer.js";
 import { putArtifact, type StoredArtifact } from "../storage/artifact-storage.js";
 import { effectiveFullName, type CandidateProfile } from "../profile/candidate-profile.js";
 
@@ -52,6 +52,8 @@ export interface TailorOptions {
 export interface RenderedTailorResult extends TailorResult {
   /** Stored DOCX artifact ref. */
   artifact: StoredArtifact;
+  /** Stored PDF artifact ref (same content, ATS-friendly PDF for one-click download). */
+  pdfArtifact: StoredArtifact;
   /** Markdown preview of the rendered resume. */
   markdown: string;
 }
@@ -63,7 +65,8 @@ export function extractSkills(jobDescription: string | null | undefined, limit =
   return SKILL_VOCAB.filter((s) => text.includes(s)).slice(0, limit);
 }
 
-function fallbackContent(baseResumeText: string, jobDescription: string, targetRole?: string | null): unknown {
+// Exported for tests (no-fabrication guardrail on the deterministic path).
+export function fallbackContent(baseResumeText: string, jobDescription: string, targetRole?: string | null): unknown {
   const text = baseResumeText.trim();
   const name = text.split(/\r?\n/).find((l) => l.trim())?.trim() ?? "";
   const email = EMAIL_RE.exec(text)?.[0] ?? null;
@@ -106,7 +109,9 @@ function fallbackAnalysis(): unknown {
 async function produceContent(
   opts: TailorOptions,
 ): Promise<{ resume: unknown; analysis: unknown; usedAi: boolean }> {
-  if (hasAnthropic() && skillAvailable()) {
+  // Guard on the provider the tailoring TASK actually routes to (not always
+  // Anthropic) — otherwise the configured local/compat model is never exercised.
+  if (hasProvider(TASK_MODEL.tailorResume.provider) && skillAvailable()) {
     const system = loadSkillSystemPrompt();
     const prompt = buildTailorUserPrompt({
       baseResumeText: opts.baseResumeText,
@@ -117,7 +122,10 @@ async function produceContent(
     try {
       const { data, usage } = await completeJson<{ resume?: unknown; analysis?: unknown }>({
         ...TASK_MODEL.tailorResume,
-        maxTokens: 4000,
+        // A full tailored resume (resume + analysis JSON) for a rich base resume
+        // exceeds 4k output tokens and truncates → JSON parse fails → fallback.
+        // 8k fits a complete resume with headroom.
+        maxTokens: 8000,
         system,
         messages: [{ role: "user", content: prompt }],
       });
@@ -144,18 +152,14 @@ async function produceContent(
 }
 
 /**
- * Tailor a resume to a JD, render it to DOCX, and store the artifact. The ONE
- * place tailoring happens. `contactOverrides` (verified personal info) is
- * force-applied after generation so personal info can never be altered.
+ * Produce the tailored resume as validated structured content — no rendering, no
+ * storage, no DB. Shared by `tailorResume` (which renders + stores) and the
+ * quality-eval harness (which only needs the content to score coverage). Applies
+ * the same validation + contact-override + fallback guarantees as the full path.
  */
-export async function tailorResume(
-  opts: TailorOptions & { storageJobKey: string },
-): Promise<RenderedTailorResult | null> {
+export async function tailorResumeContent(opts: TailorOptions): Promise<TailorResult> {
   if (!skillAvailable()) throw new Error("ats-resume-tailoring skill not found; cannot tailor");
-  if (!opts.baseResumeText?.trim()) {
-    logger.warn("no_base_resume_text");
-    return null;
-  }
+  if (!opts.baseResumeText?.trim()) throw new Error("no base resume text");
 
   const produced = await produceContent(opts);
 
@@ -180,13 +184,39 @@ export async function tailorResume(
     resume.contact = contactSchema.parse({ ...resume.contact, ...opts.contactOverrides });
   }
 
-  const analysis = atsAnalysisSchema.parse(analysisRaw ?? {});
+  // Analysis is secondary (a report); never let a malformed analysis block from
+  // the model crash tailoring — fall back to schema defaults if it doesn't parse.
+  const analysisParsed = atsAnalysisSchema.safeParse(analysisRaw ?? {});
+  const analysis = analysisParsed.success ? analysisParsed.data : atsAnalysisSchema.parse({});
+  if (!analysisParsed.success) {
+    logger.warn({ error: analysisParsed.error.issues[0]?.message }, "ats_analysis_invalid");
+  }
+  return { resume, analysis, usedAi };
+}
 
-  const docx = await toDocx(resume);
-  const artifact = await putArtifact(`${opts.storageJobKey}/tailored_resume.docx`, docx);
-  logger.info({ usedAi, key: artifact.key }, "resume_tailored");
+/**
+ * Tailor a resume to a JD, render it to DOCX + PDF, and store the artifacts. The
+ * ONE place tailoring happens. `contactOverrides` (verified personal info) is
+ * force-applied after generation so personal info can never be altered.
+ */
+export async function tailorResume(
+  opts: TailorOptions & { storageJobKey: string },
+): Promise<RenderedTailorResult | null> {
+  if (!opts.baseResumeText?.trim()) {
+    logger.warn("no_base_resume_text");
+    return null;
+  }
 
-  return { resume, analysis, usedAi, artifact, markdown: toMarkdown(resume) };
+  const { resume, analysis, usedAi } = await tailorResumeContent(opts);
+
+  const [docx, pdf] = await Promise.all([toDocx(resume), toPdf(resume)]);
+  const [artifact, pdfArtifact] = await Promise.all([
+    putArtifact(`${opts.storageJobKey}/tailored_resume.docx`, docx),
+    putArtifact(`${opts.storageJobKey}/tailored_resume.pdf`, pdf),
+  ]);
+  logger.info({ usedAi, key: artifact.key, pdfKey: pdfArtifact.key }, "resume_tailored");
+
+  return { resume, analysis, usedAi, artifact, pdfArtifact, markdown: toMarkdown(resume) };
 }
 
 /** Build the contact-override block from a candidate profile (verified info). */

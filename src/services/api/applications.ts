@@ -77,12 +77,32 @@ export interface GeneratedDocument {
   type: "resume" | "cover_letter" | "cold_email";
   content: string | null;
   createdAt: string;
+  /** Downloadable file URLs (tailored resumes only). Served via the auth'd /api/files route. */
+  pdfUrl: string | null;
+  docxUrl: string | null;
   application: { id: string; company: string; roleTitle: string; status: string; jobUrl: string | null };
 }
 
 export async function getDocuments(): Promise<{ documents: GeneratedDocument[] }> {
   const { data } = await api.get<{ documents: GeneratedDocument[] }>("/api/applications/documents");
   return data;
+}
+
+/**
+ * Download an artifact (PDF/DOCX) from the auth'd /api/files route and save it to
+ * disk. A plain <a href> can't carry the Bearer token, so we fetch the bytes via
+ * the authenticated axios client, then trigger a browser save from a blob URL.
+ */
+export async function downloadFile(url: string, filename: string): Promise<void> {
+  const { data } = await api.get<Blob>(url, { responseType: "blob" });
+  const objectUrl = URL.createObjectURL(data);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
 export async function generateDocuments(

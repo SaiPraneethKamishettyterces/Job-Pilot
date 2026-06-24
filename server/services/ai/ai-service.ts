@@ -3,6 +3,7 @@ import { getAnthropic, hasAnthropic } from "./client.js";
 import { compatComplete, compatStream, hasCompat } from "./openai-provider.js";
 import { summarizeUsage, type TokenSummary } from "./token-tracker.js";
 import { TASK_MODEL, type Provider } from "./model-config.js";
+import { assertWithinAnthropicBudget } from "./budget.js";
 import {
   coverLetterSystem,
   coverLetterUser,
@@ -29,6 +30,8 @@ interface CompleteOpts {
 async function anthropicComplete(
   opts: CompleteOpts,
 ): Promise<{ text: string; usage: TokenSummary }> {
+  // Enforce the spend cap before incurring any Anthropic cost.
+  await assertWithinAnthropicBudget();
   const client = getAnthropic();
   const response = await client.messages.create({
     model: opts.model,
@@ -81,6 +84,7 @@ export async function* streamText(opts: {
     return yield* compatStream(opts);
   }
 
+  await assertWithinAnthropicBudget();
   const client = getAnthropic();
   const stream = client.messages.stream({
     model: opts.model,

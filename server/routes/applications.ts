@@ -56,13 +56,19 @@ applicationsRouter.get("/documents", requireAuth, asyncHandler(async (req: AuthR
     },
   });
   res.json({
-    documents: docs.map((d) => ({
-      id: d.id,
-      type: d.type,
-      content: d.content,
-      createdAt: d.createdAt,
-      application: d.application,
-    })),
+    documents: docs.map((d) => {
+      // Tailored resumes carry downloadable file URLs (PDF + DOCX) in metadata.
+      const meta = (d.metadataJson ?? null) as { files?: { pdfUrl?: string; docxUrl?: string } } | null;
+      return {
+        id: d.id,
+        type: d.type,
+        content: d.content,
+        createdAt: d.createdAt,
+        pdfUrl: meta?.files?.pdfUrl ?? null,
+        docxUrl: meta?.files?.docxUrl ?? d.fileUrl ?? null,
+        application: d.application,
+      };
+    }),
   });
 }));
 

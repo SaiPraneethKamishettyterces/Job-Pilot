@@ -47,23 +47,23 @@ export const FALLBACK_PRICE = { input: 5.0, output: 25.0 };
 
 // Which provider+model each task uses.
 //
-// ─── TESTING (local Ollama) ──────────────────────────────────────────────────
-// Goal of this phase: validate the workflow/data-lineage end-to-end, NOT output
-// quality. So EVERY task runs on ONE small local model via the OpenAI-compatible
-// provider (provider:"openai" → AI_COMPAT_BASE_URL → http://localhost:11434/v1).
-// tailorResume is flipped off Claude to keep the whole pipeline local (nothing
-// hits the cloud; the "anthropic" path goes dormant with no ANTHROPIC_API_KEY).
-//
-// ─── PROD (revert) ───────────────────────────────────────────────────────────
-// Resume tailoring is quality-sensitive → Claude Sonnet. Prose (cover letter) →
-// Gemini Pro; structured/short tasks → Gemini Flash. To restore: point .env back
-// at Gemini and uncomment the original tailorResume line below.
+// Resume tailoring is quality-sensitive → Claude Sonnet by default (Issue #77).
+// It is the ONE task whose provider is env-switchable (`AI_TAILOR_PROVIDER`) so
+// the local-model workflow-testing phase can route it through the OpenAI-compat
+// provider (set AI_TAILOR_PROVIDER=local) without a code edit, while production
+// gets Claude quality by default. All other tasks run on the compat provider
+// (default Gemini free tier): prose → Pro, structured/short → Flash.
+const tailorIsLocal = ["local", "openai", "compat"].includes(
+  (config.ai.tailorProvider ?? "anthropic").toLowerCase(),
+);
+
 export const TASK_MODEL: Record<
   "coverLetter" | "resumeParse" | "jobParse" | "matchScore" | "tailorResume" | "coldEmail" | "questionAnswer",
   TaskModel
 > = {
-  // PROD: tailorResume: { provider: "anthropic", model: MODELS.sonnet },
-  tailorResume: { provider: "openai", model: COMPAT_MODELS.flash }, // TESTING: local model
+  tailorResume: tailorIsLocal
+    ? { provider: "openai", model: COMPAT_MODELS.flash }
+    : { provider: "anthropic", model: MODELS.sonnet },
   coverLetter: { provider: "openai", model: COMPAT_MODELS.pro },
   resumeParse: { provider: "openai", model: COMPAT_MODELS.flash },
   jobParse: { provider: "openai", model: COMPAT_MODELS.flash },
