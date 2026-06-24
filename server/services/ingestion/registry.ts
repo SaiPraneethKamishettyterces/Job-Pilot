@@ -11,6 +11,7 @@ import type { AtsType, BoardRef } from "./ats-sources.js";
 
 const ATS_PLATFORMS = new Set<string>([
   "greenhouse", "lever", "ashby", "workable", "recruitee", "personio", "smartrecruiters", "workday",
+  "breezy", "teamtailor",
 ]);
 
 export type RegistryEntry = {

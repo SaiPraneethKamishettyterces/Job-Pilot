@@ -52,6 +52,14 @@ export function detectAtsFromUrl(rawUrl: string): RegistryEntry | null {
     const idx = segs.indexOf("companies");
     return mk("smartrecruiters", idx >= 0 ? (segs[idx + 1] ?? "") : (segs[0] ?? ""));
   }
+  // Breezy: {token}.breezy.hr
+  if (host.endsWith("breezy.hr") && host !== "breezy.hr") {
+    return mk("breezy", host.split(".")[0]!);
+  }
+  // Teamtailor: {token}.teamtailor.com
+  if (host.endsWith("teamtailor.com") && host !== "teamtailor.com") {
+    return mk("teamtailor", host.split(".")[0]!);
+  }
   // Workday: {tenant}.{dc}.myworkdayjobs.com/{site}  (also /wday/cxs/{tenant}/{site})
   if (host.endsWith("myworkdayjobs.com")) {
     const tenant = host.split(".")[0]!;

@@ -103,6 +103,27 @@ export const config = {
     // locations from active subscribers steer the search APIs (Adzuna/USAJOBS).
     maxKeywords: num("INGEST_MAX_KEYWORDS", 30),
     maxLocations: num("INGEST_MAX_LOCATIONS", 10),
+    // Per-source enable flags. Existing sources default ON (no behavior change);
+    // the keyless fresh aggregators (Part 1.7 — Jobicy/WeWorkRemotely/Himalayas/
+    // WorkingNomads) also default ON; HN + key-required sources default OFF.
+    enabled: {
+      remotive: bool("SOURCE_REMOTIVE", true),
+      remoteok: bool("SOURCE_REMOTEOK", true),
+      arbeitnow: bool("SOURCE_ARBEITNOW", true),
+      themuse: bool("SOURCE_THEMUSE", true),
+      adzuna: bool("SOURCE_ADZUNA", true),
+      usajobs: bool("SOURCE_USAJOBS", true),
+      jobicy: bool("SOURCE_JOBICY", true),
+      weworkremotely: bool("SOURCE_WEWORKREMOTELY", true),
+      himalayas: bool("SOURCE_HIMALAYAS", true),
+      workingnomads: bool("SOURCE_WORKINGNOMADS", true),
+      // Deferred (documented toggles): very fresh but lower parse precision.
+      hackernews: bool("SOURCE_HACKERNEWS", false),
+    },
+    // Deferred key-required free sources (self-skip when the key is unset).
+    findworkApiKey: optional("FINDWORK_API_KEY"),
+    joobleApiKey: optional("JOOBLE_API_KEY"),
+    reedApiKey: optional("REED_API_KEY"),
   },
 
   // ── Matching freshness ("daily-new" 24h policy) ─────────────────────────────
@@ -120,6 +141,10 @@ export const config = {
     // Postings not re-seen within this many days are soft-expired (dropped from
     // matching); a later sighting re-activates them.
     poolRetentionDays: num("POOL_RETENTION_DAYS", 21),
+    // COST LEVER (Part 1.7): cap how many pending postings get embedded per ingest
+    // cycle. Embeddings are the real cost of a large registry-synced pool; the rest
+    // embed on later cycles (or lazily when first matched). 0 = unlimited.
+    maxEmbeddingsPerRun: num("INGEST_MAX_EMBEDDINGS_PER_RUN", 2000),
   },
 
   // ── Admin ─────────────────────────────────────────────────────────────────

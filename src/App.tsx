@@ -28,6 +28,7 @@ const AnalyticsPage = named(() => import("./pages/analytics/analytics"), "Analyt
 const BillingPage = named(() => import("./pages/billing/billing"), "BillingPage");
 const SettingsPage = named(() => import("./pages/settings/settings"), "SettingsPage");
 const JobsPage = named(() => import("./pages/jobs/jobs"), "JobsPage");
+const ApplyLinkPage = named(() => import("./pages/apply-link/apply-link"), "ApplyLinkPage");
 const CandidatesPage = named(() => import("./pages/candidates/candidates"), "CandidatesPage");
 const ProfileEditorPage = named(() => import("./pages/profile/profile-editor"), "ProfileEditorPage");
 const ActivityPage = named(() => import("./pages/activity/activity"), "ActivityPage");
@@ -67,6 +68,7 @@ export default function App() {
                 <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/candidates" element={<CandidatesPage />} />
                 <Route path="/applications" element={<ApplicationsPage />} />
+                <Route path="/apply-link" element={<ApplyLinkPage />} />
                 <Route path="/runs" element={<RunsPage />} />
                 <Route path="/resume" element={<ResumePage />} />
                 <Route path="/review" element={<ReviewPage />} />

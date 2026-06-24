@@ -6,7 +6,7 @@ import { badRequest, notFound } from "../lib/errors.js";
 import { prisma } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { applicationRepository } from "../repositories/application-repository.js";
-import { applicationUpdateSchema, answerQuestionsSchema } from "../../shared/validation.js";
+import { applicationUpdateSchema, answerQuestionsSchema, applyFromUrlSchema } from "../../shared/validation.js";
 import { aiLimiter } from "../middleware/rate-limit.js";
 import { generateApplicationDocuments } from "../services/application/application-generator.js";
 import { retryApplication } from "../services/application/retry-service.js";
@@ -15,6 +15,9 @@ import { loadCandidateProfile } from "../services/profile/candidate-profile.js";
 import { fillApplication } from "../services/automation/form-filler.js";
 import { mapFillCodeToStatus } from "../services/application/status-map.js";
 import type { ApplicationPackage } from "../services/application/application-package.js";
+import { jobRepository } from "../repositories/job-repository.js";
+import { fetchUrlText, parseJobDescription } from "../services/job-discovery/job-parser.js";
+import { detectAdapter } from "../../shared/autofill/adapter.js";
 
 export const applicationsRouter = Router();
 
@@ -62,6 +65,97 @@ applicationsRouter.get("/documents", requireAuth, asyncHandler(async (req: AuthR
       createdAt: d.createdAt,
       application: d.application,
     })),
+  });
+}));
+
+// POST /api/applications/from-url — paste-a-link (Part 1.7). Fetch + parse a job
+// posting URL, create a Job + Application, and return a preview + detected ATS
+// capabilities. Document generation is a SEPARATE confirmed step (the client calls
+// POST /:id/generate after the user reviews the preview) so we never spend
+// generation AI on a wrong/unsupported link. Declared ABOVE "/:id" so the literal
+// "from-url" segment is never captured as an application id.
+applicationsRouter.post("/from-url", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
+  const parsed = applyFromUrlSchema.safeParse(req.body);
+  if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? "Paste a valid URL");
+  const userId = req.userId!;
+  const { url } = parsed.data;
+
+  // Prereq: a profile must exist to tailor anything (resume is checked later, at
+  // generation time, as a non-blocking warning).
+  const profile = await loadCandidateProfile(userId);
+  if (!profile) throw badRequest("Complete your profile before applying from a link.");
+
+  const adapter = detectAdapter(url);
+
+  // Fetch + parse the posting. Convert raw fetch/parse failures into friendly 400s.
+  let jobData;
+  try {
+    const text = await fetchUrlText(url);
+    jobData = await parseJobDescription(text, url);
+  } catch {
+    throw badRequest("We couldn't read that link. Paste the public job posting URL (the page with the Apply button), or try again.");
+  }
+  if (!jobData?.title || !jobData?.company) {
+    throw badRequest("That page didn't look like a job posting. Paste the direct posting URL.");
+  }
+
+  // Create a Job row (generateApplicationDocuments reads the JD off application.job)
+  // using the same mapping as POST /api/jobs. No JobMatch/scoring — the user chose this job.
+  const job = await jobRepository.createJob({
+    jobUrl: jobData.jobUrl ?? url,
+    title: jobData.title,
+    company: jobData.company,
+    location: jobData.location,
+    isRemote: jobData.isRemote,
+    salaryMin: jobData.salaryMin,
+    salaryMax: jobData.salaryMax,
+    salaryCurrency: jobData.salaryCurrency,
+    description: jobData.description,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    requirementsJson: jobData.requirements as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    skillsJson: jobData.skills as any,
+    experienceMin: jobData.experienceMin,
+    experienceMax: jobData.experienceMax,
+    atsPlatform: jobData.atsPlatform,
+    workAuthorization: jobData.workAuthorization,
+  });
+
+  const application = await prisma.application.create({
+    data: {
+      userId,
+      jobId: job.id,
+      company: jobData.company,
+      roleTitle: jobData.title,
+      jobUrl: jobData.jobUrl ?? url,
+      status: "DISCOVERED" as never,
+    },
+  });
+  await prisma.applicationEvent.create({
+    data: { applicationId: application.id, type: "created_from_link", description: `Created from pasted link (${adapter.vendorLabel})` },
+  });
+
+  logger.info({ userId, applicationId: application.id, adapter: adapter.id }, "Application created from pasted link");
+  res.status(201).json({
+    applicationId: application.id,
+    job: {
+      title: jobData.title,
+      company: jobData.company,
+      location: jobData.location,
+      isRemote: jobData.isRemote,
+      salaryMin: jobData.salaryMin,
+      salaryMax: jobData.salaryMax,
+      salaryCurrency: jobData.salaryCurrency,
+      skills: jobData.skills ?? [],
+      requirements: jobData.requirements ?? [],
+      atsPlatform: jobData.atsPlatform,
+    },
+    adapter: {
+      id: adapter.id,
+      vendorLabel: adapter.vendorLabel,
+      capabilities: adapter.capabilities,
+      guidance: adapter.guidance ?? null,
+    },
   });
 }));
 

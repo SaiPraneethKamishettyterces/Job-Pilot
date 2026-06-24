@@ -18,18 +18,31 @@ export const jobRepository = {
   /** Ingested T2 job candidates for a user (ingestion output). */
   findCandidates: (
     userId: string,
-    filters: { runId?: string; remoteType?: string; seniority?: string },
-  ) =>
-    prisma.job.findMany({
+    filters: { runId?: string; remoteType?: string; seniority?: string; freshnessHours?: number; sortBy?: "recent" },
+  ) => {
+    // Freshness: posted OR first ingested within the window (fresh to us OR
+    // genuinely recently posted) — mirrors the global pool's freshness semantics.
+    const since =
+      filters.freshnessHours && filters.freshnessHours > 0
+        ? new Date(Date.now() - filters.freshnessHours * 3600_000)
+        : null;
+    return prisma.job.findMany({
       where: {
         userId,
         ...(filters.runId ? { runId: filters.runId } : {}),
         ...(filters.remoteType ? { remoteType: filters.remoteType } : {}),
         ...(filters.seniority ? { seniority: filters.seniority } : {}),
+        ...(since ? { OR: [{ postedAt: { gt: since } }, { ingestedAt: { gt: since } }] } : {}),
       },
-      orderBy: { ingestedAt: "desc" },
+      // sortBy=recent surfaces newest postings first (time-of-release emphasis);
+      // default keeps the prior ingestion-order behavior.
+      orderBy:
+        filters.sortBy === "recent"
+          ? [{ postedAt: { sort: "desc", nulls: "last" } }, { ingestedAt: "desc" }]
+          : { ingestedAt: "desc" },
       take: 200,
-    }),
+    });
+  },
 
   findMatchWithJob: (jobId: string, userId: string) =>
     prisma.jobMatch.findFirst({ where: { jobId, userId }, include: { job: true } }),

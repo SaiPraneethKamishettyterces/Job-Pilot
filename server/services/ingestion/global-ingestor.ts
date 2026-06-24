@@ -126,7 +126,10 @@ export async function runGlobalIngestion(): Promise<string> {
       data: { status: "EMBEDDING", postingsInserted: inserted, postingsUpdated: updated },
     });
 
-    const embedded = await embedPendingPostings();
+    // COST LEVER: bound embeddings per cycle (config.ingest.maxEmbeddingsPerRun).
+    // Remaining pending postings embed on later cycles. 0 = unlimited.
+    const embedCap = config.ingest.maxEmbeddingsPerRun;
+    const embedded = await embedPendingPostings(embedCap > 0 ? embedCap : 1_000_000);
 
     // Retention: soft-expire postings not re-seen within the retention window so
     // matching surfaces only fresh, still-live jobs (re-seen ones re-activate).

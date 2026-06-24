@@ -12,6 +12,20 @@ import { aiLimiter } from "../middleware/rate-limit.js";
 
 export const jobsRouter = Router();
 
+// Human "posted X ago" label for the freshness/time-of-release emphasis (Part 1.7).
+function postedAgo(d: Date | null): string | null {
+  if (!d) return null;
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months}mo ago` : `${Math.floor(months / 12)}y ago`;
+}
+
 // POST /api/jobs — parse JD from URL or text, score, save
 jobsRouter.post("/", requireAuth, aiLimiter, asyncHandler(async (req: AuthRequest, res) => {
   const parsed = addJobSchema.safeParse(req.body);
@@ -110,11 +124,14 @@ jobsRouter.get("/", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
 
 // GET /api/jobs/candidates — list ingested T2 job_candidates for the current user
 jobsRouter.get("/candidates", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
-  const { runId, remoteType, seniority } = req.query;
+  const { runId, remoteType, seniority, sortBy, freshnessHours } = req.query;
+  const fh = freshnessHours ? Number(freshnessHours) : undefined;
   const jobs = await jobRepository.findCandidates(req.userId!, {
     runId: runId ? String(runId) : undefined,
     remoteType: remoteType ? String(remoteType) : undefined,
     seniority: seniority ? String(seniority) : undefined,
+    freshnessHours: fh && Number.isFinite(fh) && fh > 0 ? fh : undefined,
+    sortBy: sortBy === "recent" ? "recent" : undefined,
   });
 
   const items = jobs.map((j) => ({
@@ -139,6 +156,7 @@ jobsRouter.get("/candidates", requireAuth, asyncHandler(async (req: AuthRequest,
     jobUrl: j.jobUrl,
     applyUrl: j.applyUrl,
     postedAt: j.postedAt?.toISOString() ?? null,
+    postedAgoLabel: postedAgo(j.postedAt ?? j.ingestedAt),
     ingestedAt: j.ingestedAt?.toISOString() ?? null,
   }));
 

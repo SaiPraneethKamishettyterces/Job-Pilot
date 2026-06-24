@@ -13,7 +13,10 @@ export type AtsType =
   | "recruitee"
   | "personio"
   | "smartrecruiters"
-  | "workday";
+  | "workday"
+  // Part 1.7 — additional public ATS boards.
+  | "breezy"
+  | "teamtailor";
 
 // A raw job as returned by an ATS or aggregator adapter, before normalization.
 // `source`/`atsPlatform` are free strings so aggregator adapters (remotive,
@@ -543,6 +546,91 @@ export function resolveBoards(targetCompanies: string[]): BoardRef[] {
   return refs;
 }
 
+// ─── Breezy HR ─────────────────────────────────────────────────────────────────
+// https://{token}.breezy.hr/json  (public, no auth)
+type BreezyJob = {
+  id?: string;
+  name?: string;
+  friendly_id?: string;
+  type?: { name?: string } | string;
+  location?: { name?: string; city?: string; country?: { name?: string } } | string;
+  description?: string; // HTML
+  url?: string;
+  published_date?: string;
+  creation_date?: string;
+  department?: string;
+};
+
+export async function fetchBreezy(token: string): Promise<RawJob[]> {
+  const data = await getJson<BreezyJob[]>(`https://${encodeURIComponent(token)}.breezy.hr/json`);
+  if (!Array.isArray(data) || !data.length) return [];
+  return data.map((j) => {
+    const loc =
+      typeof j.location === "string"
+        ? j.location
+        : [j.location?.name, j.location?.city, j.location?.country?.name].filter(Boolean).join(", ") || null;
+    const type = typeof j.type === "string" ? j.type : j.type?.name;
+    return {
+      source: "breezy" as const,
+      atsPlatform: "breezy" as const,
+      sourceJobId: String(j.id ?? j.friendly_id ?? j.name ?? "unknown"),
+      title: j.name?.trim() ?? "Untitled",
+      company: token,
+      locationRaw: loc,
+      department: j.department ?? null,
+      descriptionText: j.description ? stripHtml(j.description) : "",
+      jobUrl: j.url ?? null,
+      applyUrl: j.url ?? null,
+      postedAt: j.published_date ?? j.creation_date ?? null,
+      workplaceType: null,
+      commitment: type ?? null,
+      raw: j,
+    };
+  });
+}
+
+// ─── Teamtailor ──────────────────────────────────────────────────────────────
+// Best-effort public board JSON: https://{token}.teamtailor.com/jobs.json
+// Fails soft (404 → []); recordBoardHealth() auto-deactivates boards with no jobs.
+type TeamtailorJob = {
+  id?: string | number;
+  title?: string;
+  body?: string; // HTML
+  "created-at"?: string;
+  createdAt?: string;
+  "apply-url"?: string;
+  applyUrl?: string;
+  url?: string;
+  location?: string;
+};
+
+export async function fetchTeamtailor(token: string): Promise<RawJob[]> {
+  const data = await getJson<{ data?: Array<{ id?: string; attributes?: TeamtailorJob }>; jobs?: TeamtailorJob[] }>(
+    `https://${encodeURIComponent(token)}.teamtailor.com/jobs.json`,
+  );
+  const rows = data?.data?.map((d) => ({ id: d.id, ...(d.attributes ?? {}) })) ?? data?.jobs ?? [];
+  if (!rows.length) return [];
+  return rows.map((j) => {
+    const apply = j["apply-url"] ?? j.applyUrl ?? j.url ?? null;
+    return {
+      source: "teamtailor" as const,
+      atsPlatform: "teamtailor" as const,
+      sourceJobId: String(j.id ?? apply ?? j.title ?? "unknown"),
+      title: j.title?.trim() ?? "Untitled",
+      company: token,
+      locationRaw: j.location ?? null,
+      department: null,
+      descriptionText: j.body ? stripHtml(j.body) : "",
+      jobUrl: apply,
+      applyUrl: apply,
+      postedAt: j["created-at"] ?? j.createdAt ?? null,
+      workplaceType: null,
+      commitment: null,
+      raw: j,
+    };
+  });
+}
+
 export async function fetchBoard(ref: BoardRef): Promise<RawJob[]> {
   switch (ref.ats) {
     case "greenhouse":
@@ -561,6 +649,10 @@ export async function fetchBoard(ref: BoardRef): Promise<RawJob[]> {
       return fetchSmartRecruiters(ref.token);
     case "workday":
       return fetchWorkday(ref);
+    case "breezy":
+      return fetchBreezy(ref.token);
+    case "teamtailor":
+      return fetchTeamtailor(ref.token);
   }
 }
 

@@ -13,6 +13,7 @@ import { detectAtsFromUrl } from "./url-detect.js";
 
 const SUPPORTED: AtsType[] = [
   "greenhouse", "lever", "ashby", "workable", "recruitee", "personio", "smartrecruiters", "workday",
+  "breezy", "teamtailor",
 ];
 const FETCH_TIMEOUT_MS = 30_000;
 

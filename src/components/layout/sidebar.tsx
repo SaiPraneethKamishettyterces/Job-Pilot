@@ -15,6 +15,7 @@ import {
   HelpCircle,
   Mail,
   Activity,
+  Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -26,6 +27,7 @@ const navItems = [
   { to: "/jobs", icon: Search, label: "Jobs Found" },
   { to: "/runs", icon: Play, label: "Runs" },
   { to: "/applications", icon: Briefcase, label: "Applications" },
+  { to: "/apply-link", icon: Link2, label: "Apply with a Link" },
   { to: "/review", icon: CheckSquare, label: "Review Queue" },
   { to: "/resume", icon: FileText, label: "Documents" },
   { to: "/profile", icon: UserCircle, label: "Profile" },

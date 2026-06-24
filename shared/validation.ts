@@ -167,6 +167,14 @@ export type AddJobInput = z.infer<typeof addJobSchema>;
 
 // ─── Applications ──────────────────────────────────────────────────────────────
 
+// Paste-a-link: the user pastes a job posting/application URL and we prepare an
+// application from it (Part 1.7 — /apply-link). Parse + create only; document
+// generation is a separate confirmed step.
+export const applyFromUrlSchema = z.object({
+  url: z.string().url("Paste a valid job posting or application URL"),
+});
+export type ApplyFromUrlInput = z.infer<typeof applyFromUrlSchema>;
+
 export const applicationUpdateSchema = z.object({
   status: z.string().optional(),
   notes: z.string().optional(),
