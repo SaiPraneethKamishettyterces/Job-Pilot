@@ -70,4 +70,7 @@ export interface TailorResult {
   resume: ResumeContent;
   analysis: ATSAnalysis;
   usedAi: boolean;
+  /** The model that produced the content (e.g. "claude-sonnet-4-6", "qwen2.5:3b",
+   *  or "deterministic-fallback") — lets the UI/ledger tell Claude vs small-model. */
+  model: string;
 }

@@ -24,8 +24,8 @@ export function VerifyEmailPage() {
         </div>
 
         {state === "verifying" && (
-          <div className="space-y-3">
-            <Loader2 className="h-10 w-10 animate-spin text-muted-foreground mx-auto" />
+          <div className="space-y-3" role="status" aria-live="polite">
+            <Loader2 className="h-10 w-10 animate-spin text-muted-foreground mx-auto" aria-hidden="true" />
             <p className="text-sm text-muted-foreground">Verifying your email…</p>
           </div>
         )}

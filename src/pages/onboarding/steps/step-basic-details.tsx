@@ -53,9 +53,9 @@ export function StepBasicDetails({ data, onChange }: Props) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label>Work authorization</Label>
+          <Label htmlFor="workAuth">Work authorization</Label>
           <Select value={data.workAuthorization} onValueChange={(v) => onChange({ workAuthorization: v })}>
-            <SelectTrigger>
+            <SelectTrigger id="workAuth">
               <SelectValue placeholder="Select status" />
             </SelectTrigger>
             <SelectContent>

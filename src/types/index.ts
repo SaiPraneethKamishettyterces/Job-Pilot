@@ -205,6 +205,10 @@ export interface Application {
   appliedAt?: string;
   createdAt: string;
   updatedAt: string;
+  /** TEMP(model-badge): model that tailored this app's resume (claude/qwen/fallback). */
+  resumeModel?: string | null;
+  /** When the linked job posting was scraped/ingested (ISO). For a freshness label. */
+  scrapedAt?: string | null;
 }
 
 // ─── Run ─────────────────────────────────────────────────────────────────────

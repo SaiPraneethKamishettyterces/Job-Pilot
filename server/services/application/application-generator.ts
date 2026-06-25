@@ -104,6 +104,7 @@ export async function generateApplicationDocuments(applicationId: string): Promi
             metadataJson: {
               analysis: tailored.analysis,
               report: analysisReportMarkdown(tailored.analysis),
+              generatedBy: tailored.model,
               files: {
                 docxUrl: tailored.artifact.downloadPath,
                 pdfUrl: tailored.pdfArtifact.downloadPath,

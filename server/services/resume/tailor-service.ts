@@ -1,5 +1,6 @@
 import { completeJson, hasProvider } from "../ai/ai-service.js";
-import { TASK_MODEL } from "../ai/model-config.js";
+import { TASK_MODEL, COMPAT_MODELS, type TaskModel } from "../ai/model-config.js";
+import { AnthropicBudgetError } from "../ai/budget.js";
 import { buildTailorUserPrompt } from "../ai/prompts.js";
 import { recordUsage } from "../ai/usage-recorder.js";
 import { logger } from "../../lib/logger.js";
@@ -108,10 +109,8 @@ function fallbackAnalysis(): unknown {
 
 async function produceContent(
   opts: TailorOptions,
-): Promise<{ resume: unknown; analysis: unknown; usedAi: boolean }> {
-  // Guard on the provider the tailoring TASK actually routes to (not always
-  // Anthropic) — otherwise the configured local/compat model is never exercised.
-  if (hasProvider(TASK_MODEL.tailorResume.provider) && skillAvailable()) {
+): Promise<{ resume: unknown; analysis: unknown; usedAi: boolean; model: string }> {
+  if (skillAvailable()) {
     const system = loadSkillSystemPrompt();
     const prompt = buildTailorUserPrompt({
       baseResumeText: opts.baseResumeText,
@@ -119,35 +118,57 @@ async function produceContent(
       userInstructions: opts.userInstructions ?? null,
       targetRole: opts.targetRole ?? null,
     });
-    try {
-      const { data, usage } = await completeJson<{ resume?: unknown; analysis?: unknown }>({
-        ...TASK_MODEL.tailorResume,
-        // A full tailored resume (resume + analysis JSON) for a rich base resume
-        // exceeds 4k output tokens and truncates → JSON parse fails → fallback.
-        // 8k fits a complete resume with headroom.
-        maxTokens: 8000,
-        system,
-        messages: [{ role: "user", content: prompt }],
-      });
-      await recordUsage({
-        userId: opts.userId,
-        runId: opts.runId ?? null,
-        applicationId: opts.applicationId ?? null,
-        featureName: "resume_tailoring",
-        usage,
-      });
-      if (data && typeof data.resume === "object" && data.resume !== null) {
-        return { resume: data.resume, analysis: data.analysis ?? {}, usedAi: true };
+
+    // Attempt order: the configured tailoring model first; when that is Claude,
+    // automatically fall back to the local/compat model if Claude is unavailable
+    // OR the Anthropic spend cap is hit. This is the budget cutover — quality
+    // resumes on Claude until the cap, small-model resumes for the rest.
+    const primary = TASK_MODEL.tailorResume;
+    const candidates: TaskModel[] =
+      primary.provider === "anthropic"
+        ? [primary, { provider: "openai", model: COMPAT_MODELS.flash }]
+        : [primary];
+
+    for (const m of candidates) {
+      if (!hasProvider(m.provider)) continue;
+      try {
+        const { data, usage } = await completeJson<{ resume?: unknown; analysis?: unknown }>({
+          provider: m.provider,
+          model: m.model,
+          // A full tailored resume (resume + analysis JSON) for a rich base resume
+          // exceeds 4k output tokens and truncates → JSON parse fails → fallback.
+          // 8k fits a complete resume with headroom.
+          maxTokens: 8000,
+          system,
+          messages: [{ role: "user", content: prompt }],
+        });
+        await recordUsage({
+          userId: opts.userId,
+          runId: opts.runId ?? null,
+          applicationId: opts.applicationId ?? null,
+          featureName: "resume_tailoring",
+          usage,
+        });
+        if (data && typeof data.resume === "object" && data.resume !== null) {
+          return { resume: data.resume, analysis: data.analysis ?? {}, usedAi: true, model: m.model };
+        }
+        logger.warn({ model: m.model }, "skill_llm_no_usable_output");
+      } catch (err) {
+        const budgetHit = err instanceof AnthropicBudgetError;
+        logger.warn(
+          { model: m.model, budgetHit, err: String(err) },
+          budgetHit
+            ? "anthropic budget cap hit — falling back to local model"
+            : "resume tailoring attempt failed; trying next model",
+        );
       }
-      logger.warn("skill_llm_no_usable_output");
-    } catch (err) {
-      logger.warn({ err: String(err) }, "resume tailoring LLM call failed; using fallback");
     }
   }
   return {
     resume: fallbackContent(opts.baseResumeText, opts.jobDescription, opts.targetRole),
     analysis: fallbackAnalysis(),
     usedAi: false,
+    model: "deterministic-fallback",
   };
 }
 
@@ -191,7 +212,7 @@ export async function tailorResumeContent(opts: TailorOptions): Promise<TailorRe
   if (!analysisParsed.success) {
     logger.warn({ error: analysisParsed.error.issues[0]?.message }, "ats_analysis_invalid");
   }
-  return { resume, analysis, usedAi };
+  return { resume, analysis, usedAi, model: produced.model };
 }
 
 /**
@@ -207,16 +228,16 @@ export async function tailorResume(
     return null;
   }
 
-  const { resume, analysis, usedAi } = await tailorResumeContent(opts);
+  const { resume, analysis, usedAi, model } = await tailorResumeContent(opts);
 
   const [docx, pdf] = await Promise.all([toDocx(resume), toPdf(resume)]);
   const [artifact, pdfArtifact] = await Promise.all([
     putArtifact(`${opts.storageJobKey}/tailored_resume.docx`, docx),
     putArtifact(`${opts.storageJobKey}/tailored_resume.pdf`, pdf),
   ]);
-  logger.info({ usedAi, key: artifact.key, pdfKey: pdfArtifact.key }, "resume_tailored");
+  logger.info({ usedAi, model, key: artifact.key, pdfKey: pdfArtifact.key }, "resume_tailored");
 
-  return { resume, analysis, usedAi, artifact, pdfArtifact, markdown: toMarkdown(resume) };
+  return { resume, analysis, usedAi, model, artifact, pdfArtifact, markdown: toMarkdown(resume) };
 }
 
 /** Build the contact-override block from a candidate profile (verified info). */

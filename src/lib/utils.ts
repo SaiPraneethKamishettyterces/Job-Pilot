@@ -25,6 +25,21 @@ export function formatRelativeDate(date: string | Date) {
   return formatDate(date);
 }
 
+// Fine-grained relative time ("just now", "20m ago", "12h ago", "3d ago") for
+// recency signals like when a job posting was scraped.
+export function formatTimeAgo(date: string | Date) {
+  const diff = Date.now() - new Date(date).getTime();
+  if (diff < 0) return "just now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return formatDate(date);
+}
+
 export function truncate(str: string, n: number) {
   return str.length > n ? str.slice(0, n - 1) + "…" : str;
 }

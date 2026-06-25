@@ -97,8 +97,8 @@ export function BillingPage() {
           <div className="flex items-center gap-3">
             <Badge variant={isActive ? "success" : "secondary"}>{isActive ? "Active" : "Inactive"}</Badge>
             {isActive && stripeEnabled && (
-              <Button variant="outline" size="sm" onClick={() => portal.mutate()} disabled={portal.isPending}>
-                {portal.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Manage billing
+              <Button variant="outline" size="sm" onClick={() => portal.mutate()} disabled={portal.isPending} className="gap-2">
+                {portal.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Manage billing
               </Button>
             )}
           </div>
@@ -131,6 +131,11 @@ export function BillingPage() {
       {/* Plans */}
       <div>
         <h3 className="text-base font-semibold mb-4">Plans</h3>
+        {!plansData && (
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {plans.map((plan) => {
             const current = isActive && (sub?.planName ?? "").toLowerCase() === plan.name.toLowerCase();

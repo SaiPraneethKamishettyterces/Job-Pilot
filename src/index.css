@@ -53,12 +53,16 @@
   --brand-cyan: #06b6d4;
 
   /* Card gradient + elevation (tuned per mode) */
-  --card-grad-top: rgba(255, 255, 255, 0.045);
-  --card-grad-bottom: rgba(255, 255, 255, 0.02);
-  --card-grad-top-hover: rgba(255, 255, 255, 0.065);
-  --card-grad-bottom-hover: rgba(255, 255, 255, 0.03);
-  --app-shadow-card: 0 16px 40px rgba(0, 0, 0, 0.28);
-  --app-shadow-panel: 0 24px 70px rgba(0, 0, 0, 0.42);
+  --card-grad-top: rgba(255, 255, 255, 0.06);
+  --card-grad-bottom: rgba(255, 255, 255, 0.012);
+  --card-grad-top-hover: rgba(255, 255, 255, 0.09);
+  --card-grad-bottom-hover: rgba(255, 255, 255, 0.022);
+  /* Top bevel hairline — the "contour" that lifts a surface off the background. */
+  --card-hairline: rgba(255, 255, 255, 0.08);
+  /* Layered elevation: tight contact shadow + soft ambient cast = real depth. */
+  --app-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 38px -12px rgba(0, 0, 0, 0.6);
+  --app-shadow-card-hover: 0 2px 4px rgba(0, 0, 0, 0.4), 0 22px 50px -14px rgba(0, 0, 0, 0.7);
+  --app-shadow-panel: 0 24px 70px rgba(0, 0, 0, 0.55);
 
   /* Ambient background glow (premium dark backdrop) */
   --bg-glow-1: rgba(37, 99, 235, 0.10);
@@ -103,12 +107,16 @@
   --warning-foreground: #fffbeb;
   --info: #0284c7;
 
+  /* Light cards on a near-white bg need a faint tint top→bottom + shadow to read
+     as raised, not flat paper. Subtle, no muddiness. */
   --card-grad-top: #ffffff;
-  --card-grad-bottom: #ffffff;
-  --card-grad-top-hover: #f8fafc;
-  --card-grad-bottom-hover: #f8fafc;
-  --app-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
-  --app-shadow-panel: 0 12px 40px rgba(15, 23, 42, 0.10);
+  --card-grad-bottom: #fbfcfe;
+  --card-grad-top-hover: #ffffff;
+  --card-grad-bottom-hover: #f6f8fc;
+  --card-hairline: rgba(255, 255, 255, 0.9);
+  --app-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px -10px rgba(15, 23, 42, 0.13);
+  --app-shadow-card-hover: 0 2px 6px rgba(15, 23, 42, 0.07), 0 16px 36px -12px rgba(15, 23, 42, 0.18);
+  --app-shadow-panel: 0 16px 48px rgba(15, 23, 42, 0.14);
 
   --bg-glow-1: rgba(37, 99, 235, 0.05);
   --bg-glow-2: rgba(139, 92, 246, 0.04);
@@ -212,16 +220,21 @@
 }
 
 @layer components {
-  /* Gradient surface card (the default panel look). */
+  /* Gradient surface card (the default panel look). Inset top hairline gives the
+     bevel/contour; the layered shadow gives depth. Both retheme per mode. */
   .surface-card {
     background-image: linear-gradient(180deg, var(--card-grad-top), var(--card-grad-bottom));
     background-color: var(--card);
     border: 1px solid var(--border);
-    box-shadow: var(--shadow-card);
+    box-shadow: inset 0 1px 0 0 var(--card-hairline), var(--shadow-card);
+  }
+  .surface-card-hover {
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, background-image 0.2s ease;
   }
   .surface-card-hover:hover {
     background-image: linear-gradient(180deg, var(--card-grad-top-hover), var(--card-grad-bottom-hover));
     border-color: var(--border-medium);
+    box-shadow: inset 0 1px 0 0 var(--card-hairline), var(--app-shadow-card-hover);
   }
 
   /* Frosted glass panel (topbar, overlays, right rail). */
@@ -230,6 +243,8 @@
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
     border: 1px solid var(--border);
+    /* Soft cast below so the sticky bar lifts off scrolling content, not just a line. */
+    box-shadow: 0 10px 30px -20px rgba(0, 0, 0, 0.6);
   }
 
   /* Brand gradient text (headlines / metric emphasis). */

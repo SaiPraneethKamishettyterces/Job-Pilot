@@ -37,7 +37,33 @@ applicationsRouter.get("/", requireAuth, asyncHandler(async (req: AuthRequest, r
     parseInt(offset),
   );
 
-  res.json({ applications, total });
+  // TEMP(model-badge): attach which model produced each app's tailored resume so
+  // the Applications UI can show a Claude/local badge. Remove with the UI badge.
+  const resumeDocs = await prisma.applicationDocument.findMany({
+    where: { applicationId: { in: applications.map((a) => a.id) }, type: "resume" },
+    select: { applicationId: true, metadataJson: true },
+  });
+  const modelByApp = new Map<string, string>();
+  for (const d of resumeDocs) {
+    const g = (d.metadataJson as { generatedBy?: string } | null)?.generatedBy;
+    if (g && !modelByApp.has(d.applicationId)) modelByApp.set(d.applicationId, g);
+  }
+
+  // Scrape recency: when the linked job posting was ingested (fallback createdAt),
+  // so the candidate sees how fresh each posting is.
+  const jobIds = applications.map((a) => a.jobId).filter((id): id is string => Boolean(id));
+  const jobs = jobIds.length
+    ? await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, ingestedAt: true, createdAt: true } })
+    : [];
+  const scrapedByJob = new Map(jobs.map((j) => [j.id, (j.ingestedAt ?? j.createdAt).toISOString()]));
+
+  const enriched = applications.map((a) => ({
+    ...a,
+    resumeModel: modelByApp.get(a.id) ?? null,
+    scrapedAt: a.jobId ? scrapedByJob.get(a.jobId) ?? null : null,
+  }));
+
+  res.json({ applications: enriched, total });
 }));
 
 // GET /api/applications/documents — every generated document across the user's
@@ -52,13 +78,22 @@ applicationsRouter.get("/documents", requireAuth, asyncHandler(async (req: AuthR
     },
     orderBy: { createdAt: "desc" },
     include: {
-      application: { select: { id: true, company: true, roleTitle: true, status: true, jobUrl: true } },
+      application: {
+        select: {
+          id: true, company: true, roleTitle: true, status: true, jobUrl: true,
+          job: { select: { ingestedAt: true, createdAt: true } },
+        },
+      },
     },
   });
   res.json({
     documents: docs.map((d) => {
       // Tailored resumes carry downloadable file URLs (PDF + DOCX) in metadata.
-      const meta = (d.metadataJson ?? null) as { files?: { pdfUrl?: string; docxUrl?: string } } | null;
+      const meta = (d.metadataJson ?? null) as
+        | { generatedBy?: string; files?: { pdfUrl?: string; docxUrl?: string } }
+        | null;
+      const { job, ...appCore } = d.application;
+      const scrapedAt = job ? (job.ingestedAt ?? job.createdAt).toISOString() : null;
       return {
         id: d.id,
         type: d.type,
@@ -66,7 +101,8 @@ applicationsRouter.get("/documents", requireAuth, asyncHandler(async (req: AuthR
         createdAt: d.createdAt,
         pdfUrl: meta?.files?.pdfUrl ?? null,
         docxUrl: meta?.files?.docxUrl ?? d.fileUrl ?? null,
-        application: d.application,
+        generatedBy: meta?.generatedBy ?? null,
+        application: { ...appCore, scrapedAt },
       };
     }),
   });

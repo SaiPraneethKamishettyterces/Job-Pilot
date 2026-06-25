@@ -41,7 +41,7 @@ function StatCard({ label, value, sub, icon: Icon, iconBg, isLoading, onClick }:
       className={cn("p-5 hover:-translate-y-px", clickable && "cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/50")}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
+        <span className="text-sm font-medium text-muted-foreground">{label}</span>
         <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconBg)}>
           <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
         </div>
@@ -49,7 +49,7 @@ function StatCard({ label, value, sub, icon: Icon, iconBg, isLoading, onClick }:
       {isLoading ? (
         <Skeleton className="mt-4 h-9 w-16" />
       ) : (
-        <div className="mt-4 text-[34px] font-bold leading-none tracking-[-0.03em] tabular-nums">{value}</div>
+        <div className="mt-4 text-4xl font-bold leading-none tracking-[-0.03em] tabular-nums">{value}</div>
       )}
       <div className="mt-2 text-xs text-muted-foreground">{isLoading ? <Skeleton className="h-3 w-24" /> : sub}</div>
     </Card>
@@ -80,8 +80,8 @@ export function DashboardPage() {
         />
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-[13px] font-medium text-brand-blue-soft">Welcome back</p>
-            <h2 className="mt-1 text-[28px] font-bold leading-8 tracking-[-0.025em]">
+            <p className="text-sm font-medium text-brand-blue-soft">Welcome back</p>
+            <h2 className="mt-1 text-3xl font-bold leading-8 tracking-[-0.025em]">
               Good to see you, <span className="text-gradient">{firstName}</span>
             </h2>
             <p className="mt-1.5 text-sm text-muted-foreground">Here's what's happening with your job search today.</p>

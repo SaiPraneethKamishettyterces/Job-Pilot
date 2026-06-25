@@ -53,15 +53,15 @@ function RunCard({ run }: { run: IngestionRun }) {
         <div className="mt-4 grid grid-cols-3 gap-3 text-center">
           <div className="rounded-lg bg-muted/40 p-2.5">
             <p className="text-lg font-semibold">{run.jobsDiscovered}</p>
-            <p className="text-[11px] text-muted-foreground">found</p>
+            <p className="text-xs text-muted-foreground">found</p>
           </div>
           <div className="rounded-lg bg-muted/40 p-2.5">
             <p className="text-lg font-semibold text-success">{run.jobsInserted}</p>
-            <p className="text-[11px] text-muted-foreground">stored (T2)</p>
+            <p className="text-xs text-muted-foreground">stored (T2)</p>
           </div>
           <div className="rounded-lg bg-muted/40 p-2.5">
             <p className="text-lg font-semibold text-muted-foreground">{run.duplicatesSkipped}</p>
-            <p className="text-[11px] text-muted-foreground">duplicates</p>
+            <p className="text-xs text-muted-foreground">duplicates</p>
           </div>
         </div>
 
@@ -188,6 +188,12 @@ export function RunsPage() {
           <h3 className="text-base font-semibold">Run History</h3>
           {runsQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
         </div>
+
+        {runsQuery.isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
 
         {runsQuery.isError && (
           <p className="text-sm text-destructive">Could not load runs. Is the backend / database up?</p>

@@ -66,7 +66,7 @@ export function CandidatesPage() {
         <p className="text-sm text-destructive">Could not load candidates. Is the backend / database up?</p>
       )}
 
-      {!isLoading && jobs.length === 0 && (
+      {!isLoading && !isError && jobs.length === 0 && (
         <Card>
           <CardContent className="p-8 text-center text-sm text-muted-foreground">
             No candidates yet. Run an ingestion from the{" "}
@@ -81,6 +81,7 @@ export function CandidatesPage() {
       {jobs.length > 0 && (
         <Card>
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -120,12 +121,12 @@ export function CandidatesPage() {
                     <TableCell className="max-w-[200px]">
                       <div className="flex flex-wrap gap-1">
                         {j.skills.slice(0, 4).map((s) => (
-                          <Badge key={s} variant="outline" className="text-[10px]">
+                          <Badge key={s} variant="outline" className="text-xs">
                             {s}
                           </Badge>
                         ))}
                         {j.skills.length > 4 && (
-                          <span className="text-[10px] text-muted-foreground">+{j.skills.length - 4}</span>
+                          <span className="text-xs text-muted-foreground">+{j.skills.length - 4}</span>
                         )}
                       </div>
                     </TableCell>
@@ -136,7 +137,8 @@ export function CandidatesPage() {
                           href={(j.applyUrl ?? j.jobUrl)!}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex text-primary"
+                          aria-label={`View job posting for ${j.title} at ${j.company}`}
+                          className="inline-flex text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
                         >
                           <ExternalLink className="h-4 w-4" />
                         </a>
@@ -148,6 +150,7 @@ export function CandidatesPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}

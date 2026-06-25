@@ -110,8 +110,8 @@ export function OnboardingPage() {
       </div>
 
       <div className="mx-auto max-w-3xl px-6 py-10">
-        {/* Step indicators */}
-        <div className="flex items-center justify-between mb-10">
+        {/* Step indicators — hidden on mobile; progress bar + "Step X of N" covers it */}
+        <div className="hidden sm:flex items-center justify-between mb-10">
           {STEPS.map((s, i) => (
             <div key={i} className="flex items-center">
               <div className="flex flex-col items-center">
@@ -123,18 +123,24 @@ export function OnboardingPage() {
                       ? "border-primary text-primary"
                       : "border-muted text-muted-foreground"
                   }`}
+                  aria-label={`Step ${i + 1}: ${s.label}${i < step ? " (completed)" : i === step ? " (current)" : ""}`}
                 >
                   {i < step ? <Check className="h-4 w-4" /> : i + 1}
                 </div>
-                <span className={`mt-1.5 text-xs font-medium hidden sm:block ${i === step ? "text-foreground" : "text-muted-foreground"}`}>
+                <span className={`mt-1.5 text-xs font-medium ${i === step ? "text-foreground" : "text-muted-foreground"}`}>
                   {s.label}
                 </span>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`h-0.5 w-12 sm:w-20 mx-2 ${i < step ? "bg-primary" : "bg-border"}`} />
+                <div className={`h-0.5 w-8 lg:w-16 mx-1.5 ${i < step ? "bg-primary" : "bg-border"}`} />
               )}
             </div>
           ))}
+        </div>
+        {/* Mobile: show step name below progress bar */}
+        <div className="sm:hidden mb-6">
+          <p className="text-sm font-medium">{STEPS[step].label}</p>
+          <p className="text-xs text-muted-foreground">{STEPS[step].description}</p>
         </div>
 
         {/* Step content */}

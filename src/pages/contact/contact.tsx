@@ -180,7 +180,7 @@ export function ContactPage() {
                           <FormItem>
                             <FormLabel>Full Name</FormLabel>
                             <FormControl>
-                              <Input placeholder="Jane Smith" {...field} />
+                              <Input placeholder="Jane Smith" autoComplete="name" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -193,7 +193,7 @@ export function ContactPage() {
                           <FormItem>
                             <FormLabel>Email</FormLabel>
                             <FormControl>
-                              <Input placeholder="jane@example.com" type="email" {...field} />
+                              <Input placeholder="jane@example.com" type="email" autoComplete="email" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

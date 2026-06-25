@@ -26,17 +26,18 @@ export function StepPreferences({ data, onChange }: Props) {
     <div className="space-y-6">
       {/* Locations */}
       <div className="space-y-2">
-        <Label>Preferred locations</Label>
+        <Label htmlFor="locInput">Preferred locations</Label>
         <p className="text-xs text-muted-foreground">Cities or metros you'd work in</p>
         <div className="flex gap-2">
           <Input
+            id="locInput"
             placeholder="e.g. New York, NY"
             value={locInput}
             onChange={(e) => setLocInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLocation(); } }}
             onBlur={addLocation}
           />
-          <Button type="button" variant="outline" size="icon" onClick={addLocation}>
+          <Button type="button" variant="outline" size="icon" onClick={addLocation} aria-label="Add location">
             <Plus className="h-4 w-4" />
           </Button>
         </div>
@@ -45,7 +46,7 @@ export function StepPreferences({ data, onChange }: Props) {
             {data.locations.map((loc) => (
               <span key={loc} className="inline-flex items-center gap-1 rounded-full border bg-secondary px-2.5 py-0.5 text-xs font-medium">
                 {loc}
-                <button type="button" onClick={() => onChange({ locations: data.locations.filter((l) => l !== loc) })} className="hover:text-destructive">
+                <button type="button" onClick={() => onChange({ locations: data.locations.filter((l) => l !== loc) })} className="hover:text-destructive" aria-label={`Remove ${loc}`}>
                   <X className="h-3 w-3" />
                 </button>
               </span>
@@ -56,9 +57,9 @@ export function StepPreferences({ data, onChange }: Props) {
 
       {/* Remote preference */}
       <div className="space-y-2">
-        <Label>Work mode preference</Label>
+        <Label htmlFor="remotePreference">Work mode preference</Label>
         <Select value={data.remotePreference} onValueChange={(v) => onChange({ remotePreference: v })}>
-          <SelectTrigger>
+          <SelectTrigger id="remotePreference">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

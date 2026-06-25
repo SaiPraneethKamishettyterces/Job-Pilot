@@ -73,7 +73,7 @@ export function ActivityPage() {
                     </span>
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium">{labelFor(e)}</p>
-                      <Badge variant="secondary" className="text-[10px] capitalize">{e.kind}</Badge>
+                      <Badge variant="secondary" className="text-xs capitalize">{e.kind}</Badge>
                       <span className="text-xs text-muted-foreground">{formatRelativeDate(e.createdAt)}</span>
                     </div>
                     {(e.company || e.roleTitle) && (

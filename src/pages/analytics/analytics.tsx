@@ -47,7 +47,14 @@ export function AnalyticsPage() {
             ].map((row) => (
               <div key={row.label} className="flex items-center gap-3">
                 <span className="text-sm text-muted-foreground w-52 shrink-0">{row.label}</span>
-                <div className="flex-1 bg-muted rounded-full h-2">
+                <div
+                  className="flex-1 bg-muted rounded-full h-2"
+                  role="progressbar"
+                  aria-valuenow={row.pct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`${row.label}: ${row.pct}%`}
+                >
                   <div
                     className="bg-primary h-2 rounded-full transition-all"
                     style={{ width: `${row.pct}%` }}

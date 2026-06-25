@@ -144,6 +144,8 @@ function FaqAccordion({ items }: { items: FaqItem[] }) {
       {items.map((item, i) => (
         <div key={i}>
           <button
+            type="button"
+            aria-expanded={open === i}
             className="w-full text-left py-4 flex items-center justify-between gap-4 hover:text-foreground text-foreground/90 transition-colors"
             onClick={() => setOpen(open === i ? null : i)}
           >
@@ -207,6 +209,7 @@ export function HelpPage() {
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search questions…"
+              aria-label="Search help articles"
               className="pl-10 h-11 bg-background"
               value={search}
               onChange={(e) => setSearch(e.target.value)}

@@ -1,4 +1,3 @@
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
@@ -53,15 +52,19 @@ export function StepApplicationRules({ data, onChange }: Props) {
       <div className="space-y-3">
         <Label>Application mode</Label>
         <p className="text-xs text-muted-foreground">You can change this anytime from Settings</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div role="radiogroup" aria-label="Application mode" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {APPROVAL_MODES.map((mode) => (
             <Card
               key={mode.value}
+              role="radio"
+              aria-checked={data.approvalMode === mode.value}
+              tabIndex={0}
               className={cn(
                 "cursor-pointer border transition-all",
                 data.approvalMode === mode.value ? mode.bg : "hover:bg-muted/30"
               )}
               onClick={() => onChange({ approvalMode: mode.value })}
+              onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onChange({ approvalMode: mode.value }); } }}
             >
               <CardContent className="p-4 space-y-2">
                 <div className={cn("flex items-center gap-2", data.approvalMode === mode.value ? mode.color : "text-foreground")}>
@@ -83,7 +86,7 @@ export function StepApplicationRules({ data, onChange }: Props) {
           value={String(data.applicationsPerDay)}
           onValueChange={(v) => onChange({ applicationsPerDay: Number(v) })}
         >
-          <SelectTrigger className="w-48">
+          <SelectTrigger id="appsPerDay" className="w-48">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -99,7 +102,8 @@ export function StepApplicationRules({ data, onChange }: Props) {
         <Label htmlFor="threshold">Minimum match score to apply</Label>
         <p className="text-xs text-muted-foreground">Jobs scoring below this threshold will be skipped</p>
         <div className="flex items-center gap-4">
-          <Input
+          {/* ponytail: native range — avoids text-Input box styling (h-11 border) on a slider */}
+          <input
             id="threshold"
             type="range"
             min={50}
@@ -107,7 +111,7 @@ export function StepApplicationRules({ data, onChange }: Props) {
             step={5}
             value={data.matchThreshold}
             onChange={(e) => onChange({ matchThreshold: Number(e.target.value) })}
-            className="flex-1 h-2 cursor-pointer"
+            className="flex-1 h-2 cursor-pointer accent-primary"
           />
           <span className="text-sm font-semibold w-12 text-right">{data.matchThreshold}%</span>
         </div>

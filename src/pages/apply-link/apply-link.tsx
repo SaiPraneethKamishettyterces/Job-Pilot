@@ -74,9 +74,9 @@ export function ApplyLinkPage() {
       {/* Step indicator */}
       <div>
         <Progress value={(step / STEPS.length) * 100} className="h-1.5" />
-        <div className="mt-2 flex justify-between text-[11px] font-medium">
+        <div className="mt-2 flex justify-between text-xs font-medium">
           {STEPS.map((s, i) => (
-            <span key={s} className={i + 1 <= step ? "text-foreground" : "text-muted-foreground/60"}>
+            <span key={s} className={i + 1 <= step ? "text-foreground" : "text-muted-foreground"}>
               {i + 1 < step ? <CheckCircle2 className="mr-1 inline h-3 w-3 text-green-600" /> : `${i + 1}. `}{s}
             </span>
           ))}

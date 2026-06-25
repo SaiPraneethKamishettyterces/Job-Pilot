@@ -126,7 +126,7 @@ export function AuthLayout({
           </div>
 
           <div className="mb-7">
-            <h1 className="text-[28px] font-bold leading-9 tracking-[-0.02em]">{title}</h1>
+            <h1 className="text-3xl font-bold leading-9 tracking-[-0.02em]">{title}</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">{subtitle}</p>
           </div>
 

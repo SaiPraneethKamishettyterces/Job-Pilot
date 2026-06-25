@@ -80,7 +80,9 @@ export interface GeneratedDocument {
   /** Downloadable file URLs (tailored resumes only). Served via the auth'd /api/files route. */
   pdfUrl: string | null;
   docxUrl: string | null;
-  application: { id: string; company: string; roleTitle: string; status: string; jobUrl: string | null };
+  /** Model that generated this doc (e.g. "claude-sonnet-4-6", "qwen2.5:3b"). Resume only. */
+  generatedBy: string | null;
+  application: { id: string; company: string; roleTitle: string; status: string; jobUrl: string | null; scrapedAt?: string | null };
 }
 
 export async function getDocuments(): Promise<{ documents: GeneratedDocument[] }> {

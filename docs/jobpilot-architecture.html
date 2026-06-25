@@ -1,0 +1,264 @@
+<title>JobPilot — Architecture & Data Flow</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141925; --panel2:#1b2230; --line:#2a3344;
+    --ink:#e8edf6; --mut:#94a3b8; --dim:#64748b;
+    --a:#6ea8fe; --g:#5fd0a0; --y:#f2c879; --p:#c79bf2; --r:#f28b82; --c:#5fd4d0;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;
+    background-image:radial-gradient(900px 500px at 85% -10%,rgba(110,168,254,.10),transparent),
+                     radial-gradient(700px 500px at 0% 0%,rgba(199,155,242,.07),transparent);}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 22px 90px}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:34px}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.3px}
+  .sub{color:var(--mut);font-size:15px}
+  .pill{display:inline-block;font:600 11px/1 var(--mono);padding:5px 9px;border-radius:999px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--mut);margin:2px 6px 2px 0;vertical-align:middle}
+  .pill.ok{color:var(--g);border-color:#22503c}
+  .pill.warn{color:var(--y);border-color:#5a4a23}
+  h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--a);margin:46px 0 16px;
+    border-left:3px solid var(--a);padding-left:10px}
+  h3{font-size:16px;margin:24px 0 8px}
+  p{color:#cdd6e6;font-size:14.5px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:14px 0}
+  .grid{display:grid;gap:14px}
+  @media(min-width:760px){.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}}
+  .flow{display:flex;flex-direction:column;gap:0}
+  .stage{display:grid;grid-template-columns:46px 1fr;gap:16px;position:relative;padding:0 0 26px}
+  .stage:last-child{padding-bottom:0}
+  .stage .rail{display:flex;flex-direction:column;align-items:center}
+  .dot{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font:700 14px/1 var(--mono);
+    background:var(--panel2);border:1px solid var(--line);color:var(--ink);flex:none}
+  .stage .bar{flex:1;width:2px;background:linear-gradient(var(--line),transparent);margin-top:4px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .card h4{margin:0 0 4px;font-size:15px}
+  .card .who{font:600 11px/1 var(--mono);color:var(--dim)}
+  .card p{margin:7px 0 0;font-size:13.5px;color:var(--mut)}
+  code{font-family:var(--mono);font-size:.88em;background:#0d1422;border:1px solid var(--line);
+    padding:1px 6px;border-radius:6px;color:var(--c)}
+  .tag{font:600 10.5px/1 var(--mono);padding:3px 7px;border-radius:6px;border:1px solid var(--line);
+    background:#0d1422;color:var(--mut);margin:6px 6px 0 0;display:inline-block}
+  .tag.v{color:var(--p);border-color:#46356a}
+  .arrowcol{font:700 18px/1 var(--mono);color:var(--dim);text-align:center;padding:6px 0}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font:600 11px/1.2 var(--mono);letter-spacing:.04em;text-transform:uppercase}
+  td code{white-space:nowrap}
+  .layer{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:10px 0}
+  .layer>.lh{padding:9px 14px;font:700 12px/1 var(--mono);letter-spacing:.06em;background:var(--panel2);border-bottom:1px solid var(--line)}
+  .layer>.lb{padding:12px 14px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font:500 12px/1 var(--sans);padding:7px 11px;border-radius:8px;background:#0d1422;border:1px solid var(--line);color:#cdd6e6}
+  .chip b{color:#fff;font-weight:600}
+  .L-ui>.lh{color:var(--a)} .L-api>.lh{color:var(--g)} .L-svc>.lh{color:var(--y)}
+  .L-wrk>.lh{color:var(--p)} .L-data>.lh{color:var(--c)}
+  .next{counter-reset:n}
+  .step{display:grid;grid-template-columns:30px 1fr;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+  .step:last-child{border-bottom:0}
+  .step .num{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:700 13px/1 var(--mono);flex:none}
+  .pri-now .num{background:#1f3a2e;color:var(--g);border:1px solid #2c6b4f}
+  .pri-next .num{background:#3a3320;color:var(--y);border:1px solid #6b5a2c}
+  .pri-later .num{background:#2a2740;color:var(--p);border:1px solid #46356a}
+  .step h4{margin:0 0 3px;font-size:15px}
+  .step p{margin:0;font-size:13.5px;color:var(--mut)}
+  .eff{font:600 10.5px/1 var(--mono);color:var(--dim);float:right}
+  .note{font-size:12.5px;color:var(--dim);margin-top:8px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font:600 11px/1 var(--mono);color:var(--mut);margin-top:10px}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:middle}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <h1>🧭 JobPilot — Architecture &amp; Data Flow</h1>
+  <div class="sub">Auto-apply application · modular monolith · React 19 + Express 5 + Prisma/PostgreSQL(pgvector)</div>
+  <div style="margin-top:14px">
+    <span class="pill ok">pool: 7,329 postings</span>
+    <span class="pill ok">your candidates: 80</span>
+    <span class="pill ok">applications prepared: 20</span>
+    <span class="pill warn">auto-submit: OFF (prepare-only)</span>
+    <span class="pill">dev DB: docker pgvector :5433</span>
+  </div>
+</header>
+
+<h2>The big idea</h2>
+<div class="panel">
+<p style="margin-top:0">JobPilot decouples <b>job discovery</b> from <b>per-user matching</b>. A scheduled, user-agnostic
+<b>global ingestor</b> keeps one shared <code>JobPosting</code> pool fresh. When a user runs, a cheap two-stage
+matcher (vector ANN → LLM rerank) pulls the best jobs from that pool, materializes them as the user's own
+<code>Job</code>/<code>JobMatch</code> rows, then prepares full application packages — but <b>never submits</b>;
+the human approves. Everything (incl. generated DOCX/PDF bytes) lives in one Postgres.</p>
+</div>
+
+<h2>Data flow — end to end</h2>
+<div class="panel">
+<div class="flow">
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--y)">0</div><div class="bar"></div></div>
+    <div class="card"><div class="who">demand-profile.ts · scheduled</div>
+      <h4>Demand profile</h4>
+      <p>Aggregates active subscribers' <b>target roles</b> (→ steer keyword search APIs) and <b>target companies</b>
+      (→ expand the ATS board set). One profile drives the whole cycle.</p></div></div>
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--g)">1</div><div class="bar"></div></div>
+    <div class="card"><div class="who">global-ingestor.ts → GlobalIngestRun</div>
+      <h4>Global ingest (user-agnostic, daily)</h4>
+      <p>Fans out across three source classes, bounded-concurrency, fail-soft per source:</p>
+      <span class="tag">ATS registry: greenhouse · lever · ashby · recruitee …</span>
+      <span class="tag">free aggregators: remotive · remoteok · arbeitnow · themuse · adzuna · usajobs</span>
+      <span class="tag v">apify (paid, gated by token)</span>
+      <p>Registry is rotated least-recently-checked-first &amp; self-heals via per-board health (auto-deactivate dead slugs).</p></div></div>
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--g)">2</div><div class="bar"></div></div>
+    <div class="card"><div class="who">job-normalizer.ts · job-posting-repository.ts</div>
+      <h4>Normalize → dedupe → upsert pool</h4>
+      <p>Each raw posting is normalized to a common shape and collapsed on a global <code>dedupeKey</code>, then
+      <code>upsert</code>ed into the shared <b><code>JobPosting</code></b> pool (insert vs update tracked).</p></div></div>
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--c)">3</div><div class="bar"></div></div>
+    <div class="card"><div class="who">embed-postings.ts · pgvector</div>
+      <h4>Embed new/changed postings</h4>
+      <p>Pending rows get a <code>vector(768)</code> embedding (OpenAI-compatible embed model) indexed by HNSW for
+      cosine ANN. Stale postings past <code>POOL_RETENTION_DAYS</code> are soft-expired so matching sees only fresh, live jobs.</p>
+      <span class="tag warn">currently ~1,000 embedded/run — full-pool backfill is a next step</span></div></div>
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--a)">4</div><div class="bar"></div></div>
+    <div class="card"><div class="who">runs.ts POST /start → application-pipeline.ts · stage A</div>
+      <h4>Per-user run → candidate generation (cheap, no LLM)</h4>
+      <p>On manual run or daily scheduler: build a profile snapshot, then retrieve ~200 candidates from the pool.
+      <b>Vector ANN</b> when AI configured; <b>keyword+recency fallback</b> otherwise (always returns jobs). Hard filters
+      applied here: blocked companies, remote/location, min salary, visa sponsorship, exclude already-applied.</p></div></div>
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--a)">5</div><div class="bar"></div></div>
+    <div class="card"><div class="who">rerank.ts · stage B → Job + JobMatch</div>
+      <h4>Rerank &amp; materialize per-user rows</h4>
+      <p>Deterministic feature score (<code>0.6·vector + 0.25·title + 0.15·skill</code>) ranks all candidates; top 40 get
+      <b>LLM rerank</b> (Gemini Flash) — or a deterministic verdict with no AI key. Each result is written as a per-user
+      <b><code>Job</code></b> (linked to the pool posting) + scored <b><code>JobMatch</code></b>.</p></div></div>
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--a)">6</div><div class="bar"></div></div>
+    <div class="card"><div class="who">select-matches.ts</div>
+      <h4>Shortlist (cap + diversity)</h4>
+      <p>Cap = min(plan/day, personal cap, monthly remaining). Caps any one employer to ~⅓ of the day's slots, fills the rest by next-best score.</p></div></div>
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--p)">7</div><div class="bar"></div></div>
+    <div class="card"><div class="who">application-generator.ts → Application + ApplicationDocument + Artifact</div>
+      <h4>Prepare application packages</h4>
+      <p>For each shortlisted job: create an <code>Application</code>, then AI-generate tailored <b>resume</b>, <b>cover letter</b>,
+      <b>cold email</b>, and <b>autofill package</b>. Files stored as <b>BYTEA in the <code>Artifact</code> table</b> (no object store),
+      downloaded via authenticated <code>/api/files</code>.</p>
+      <span class="tag">status → NEEDS_APPROVAL / ASSISTED_REQUIRED</span></div></div>
+
+  <div class="stage"><div class="rail"><div class="dot" style="color:var(--r)">8</div></div>
+    <div class="card"><div class="who">AUTO_SUBMIT=false · notifications/email-service.ts</div>
+      <h4>Human approves — then submit</h4>
+      <p>Pipeline stops at "prepared". Nothing is auto-submitted under current config; the user reviews in the UI and submits.
+      A completion email is sent (log transport in dev). Automation (Playwright form-filler) is the unfinished frontier.</p></div></div>
+
+</div>
+</div>
+
+<h2>Application architecture</h2>
+<div class="panel">
+  <div class="layer L-ui"><div class="lh">CLIENT — React 19 + Vite + Tailwind v4 + Radix</div><div class="lb">
+    <span class="chip"><b>Main app</b> :5173 — Jobs · Candidates · Runs · Applications · Profile · Billing</span>
+    <span class="chip"><b>Admin app</b> /admin — separate Vite entry, Command Center (sources/overview)</span>
+    <span class="chip">React Router · services/api/* (fetch)</span>
+  </div></div>
+
+  <div class="arrowcol">▼ &nbsp; HTTPS / JWT &nbsp; ▼</div>
+
+  <div class="layer L-api"><div class="lh">BFF — Express 5 (server/index.ts) · ~18 routers</div><div class="lb">
+    <span class="chip">auth · profile · resumes · onboarding</span>
+    <span class="chip">jobs · runs · ingestion · applications · files</span>
+    <span class="chip">claude (AI stream) · stats · activity</span>
+    <span class="chip">billing · subscription (+ Stripe webhook raw)</span>
+    <span class="chip">admin (require-admin)</span>
+    <span class="chip">mw: cors · rate-limit(auth/ai) · request-logger · error-handler · trust-proxy</span>
+  </div></div>
+
+  <div class="arrowcol">▼</div>
+
+  <div class="layer L-svc"><div class="lh">DOMAIN SERVICES — server/services/*</div><div class="lb">
+    <span class="chip"><b>ingestion</b> — global-ingestor · registry · sources · scrapers · apify · embed</span>
+    <span class="chip"><b>matching</b> — candidate-generator · rerank · match-scorer · select-matches · title-match</span>
+    <span class="chip"><b>application</b> — application-generator</span>
+    <span class="chip"><b>ai</b> — dual provider (Anthropic + OpenAI-compat) · model-config · token-tracker</span>
+    <span class="chip"><b>automation</b> — form-filler (Playwright)</span>
+    <span class="chip">resume · profile · billing(Stripe) · notifications · storage · usage · job-discovery</span>
+  </div></div>
+
+  <div class="arrowcol">▼</div>
+
+  <div class="layer L-wrk"><div class="lh">BACKGROUND WORKERS — started on boot</div><div class="lb">
+    <span class="chip"><b>daily-scheduler</b> — fires global ingest @ <code>GLOBAL_INGEST_HOUR</code> + dispatches daily user runs</span>
+    <span class="chip"><b>application-pipeline</b> — async per-run match → prepare</span>
+    <span class="chip"><b>retry-worker</b> — re-attempt failed applications</span>
+  </div></div>
+
+  <div class="arrowcol">▼</div>
+
+  <div class="layer L-data"><div class="lh">DATA — PostgreSQL 17 + pgvector (Prisma, 24 tables)</div><div class="lb">
+    <span class="chip"><b>pool</b> JobPosting(vector 768) · GlobalIngestRun · JobSource · ScraperSourceConfig</span>
+    <span class="chip"><b>per-user</b> Job · JobMatch · ApplicationRun</span>
+    <span class="chip"><b>applications</b> Application · ApplicationDocument · ApplicationAnswer · ApplicationEvent · RecruiterContact</span>
+    <span class="chip"><b>identity</b> User · UserProfile · UserPreference · Resume · ResumeVersion</span>
+    <span class="chip"><b>files</b> Artifact (BYTEA)</span>
+    <span class="chip"><b>billing</b> Plan · Subscription · SubscriptionEvent · AIUsageEvent</span>
+  </div></div>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--a)"></span>client</span>
+    <span><span class="sw" style="background:var(--g)"></span>bff</span>
+    <span><span class="sw" style="background:var(--y)"></span>services</span>
+    <span><span class="sw" style="background:var(--p)"></span>workers</span>
+    <span><span class="sw" style="background:var(--c)"></span>data</span>
+  </div>
+</div>
+
+<h3>Cross-cutting</h3>
+<div class="grid g3">
+  <div class="card"><h4>AI routing</h4><p>Tasks mapped to providers in <code>model-config.ts</code>: <b>Anthropic Claude</b> (cover letter / docs) + <b>OpenAI-compatible</b> endpoint for Gemini Flash/Pro + embeddings. Token usage tracked per call → <code>AIUsageEvent</code>.</p></div>
+  <div class="card"><h4>Auth &amp; tenancy</h4><p>JWT bearer; every per-user query scoped by <code>userId</code>. Admin surface gated by <code>require-admin</code> + <code>ADMIN_EMAILS</code>.</p></div>
+  <div class="card"><h4>Deploy</h4><p>Cloud Run via <code>Dockerfile</code> + <code>cloudbuild.yaml</code>; secrets from Secret Manager; prod DB = Cloud SQL w/ pgvector. <code>/health</code> + <code>/readiness</code> probes.</p></div>
+</div>
+
+<h2>Next best steps</h2>
+<div class="panel next">
+
+  <div class="step pri-now"><div class="num">1</div><div>
+    <span class="eff">~10 min · high value</span><h4>Land the merge properly</h4>
+    <p>Collaborator's update is sitting on your <code>fix/lint-unused-signals</code> branch, not <code>main</code>. Commit your WIP (form-filler), open a PR, get it onto <code>main</code> so the team shares one source of truth.</p></div></div>
+
+  <div class="step pri-now"><div class="num">2</div><div>
+    <span class="eff">~15 min · unlocks coverage</span><h4>Fill source API keys</h4>
+    <p>Most ATS slugs in the seed registry 404'd; coverage came from keyless aggregators. Add <code>APIFY_TOKEN</code>, <code>ADZUNA_APP_ID/KEY</code>, <code>USAJOBS_API_KEY</code>+UA, <code>THEMUSE_API_KEY</code> to widen the pool substantially. Re-run ingest.</p></div></div>
+
+  <div class="step pri-now"><div class="num">3</div><div>
+    <span class="eff">code change</span><h4>Backfill embeddings for the whole pool</h4>
+    <p>Only ~1,000 of 7,329 postings are embedded, so vector matching sees a fraction of the pool. Raise/loop the <code>embed-postings</code> batch cap until <code>embedding IS NOT NULL</code> covers the pool (and confirm the embed model key is set).</p></div></div>
+
+  <div class="step pri-next"><div class="num">4</div><div>
+    <span class="eff">reproducibility</span><h4>Commit a docker-compose for the pgvector DB</h4>
+    <p>The 5433 container + repointed <code>DATABASE_URL</code> is currently tribal knowledge. Add <code>docker-compose.yml</code> (pgvector/pgvector:pg17) + a README note so any teammate gets the same DB. Pairs with the collaborator's new <code>.env.example</code>.</p></div></div>
+
+  <div class="step pri-next"><div class="num">5</div><div>
+    <span class="eff">data quality</span><h4>Run a registry health sweep + grow it</h4>
+    <p>Per-board health tracking exists — trigger it to auto-deactivate dead slugs, and flip on <code>ATS_SEED_FEASHLIAA</code>/<code>OPENJOBS</code> (and <code>ATS_REGISTRY_SYNC_ENABLED</code>) to compound the registry from ~89 toward tens of thousands.</p></div></div>
+
+  <div class="step pri-next"><div class="num">6</div><div>
+    <span class="eff">confidence</span><h4>Integration tests for ingest → match</h4>
+    <p>The new pipeline has no end-to-end coverage. Add a vitest integration run (seed pool → run pipeline → assert Job/JobMatch/Application rows). Mind the known dev-<code>.env</code>-leaks-key gotcha in vitest.</p></div></div>
+
+  <div class="step pri-later"><div class="num">7</div><div>
+    <span class="eff">the frontier</span><h4>Close the auto-submit loop (assisted)</h4>
+    <p>Today it's prepare-only. Decide the submission UX — Playwright <code>form-filler</code> driving real ATS forms vs. a browser-extension autofill handoff — gated behind explicit per-application approval. This is the product's core differentiator and the biggest remaining build.</p></div></div>
+
+  <div class="step pri-later"><div class="num">8</div><div>
+    <span class="eff">scale/cost</span><h4>Observability on the AI spend</h4>
+    <p><code>AIUsageEvent</code> + token-tracker already capture per-call usage. Surface it on a dashboard (cost per run, per provider) before volume grows — matching reranks + doc generation are the cost centers.</p></div></div>
+
+</div>
+
+<p class="note">Generated from source inspection on 2026-06-23 · main entry <code>server/index.ts</code> · pipeline <code>server/workers/application-pipeline.ts</code> · ingest <code>server/services/ingestion/global-ingestor.ts</code>. Live counts from the dev pgvector DB on :5433.</p>
+</div>

@@ -106,12 +106,12 @@ export function StepApplicationDetails({ data, onChange }: Props) {
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Logistics</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Willing to relocate?</Label>
+            <Label htmlFor="willingToRelocate">Willing to relocate?</Label>
             <Select
               value={data.willingToRelocate === undefined ? "" : data.willingToRelocate ? "yes" : "no"}
               onValueChange={(v) => onChange({ willingToRelocate: YESNO.find((y) => y.v === v)?.b })}
             >
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectTrigger id="willingToRelocate"><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
             </Select>
           </div>

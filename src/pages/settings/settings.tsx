@@ -78,12 +78,12 @@ export function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input defaultValue={user?.name ?? ""} />
+            <Label htmlFor="settings-name">Name</Label>
+            <Input id="settings-name" defaultValue={user?.name ?? ""} />
           </div>
           <div className="space-y-1.5">
-            <Label>Email</Label>
-            <Input defaultValue={user?.email ?? ""} disabled />
+            <Label htmlFor="settings-email">Email</Label>
+            <Input id="settings-email" defaultValue={user?.email ?? ""} disabled />
           </div>
           <Button onClick={save} size="sm">
             <Save className="h-4 w-4" />
@@ -103,9 +103,9 @@ export function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Approval mode</Label>
+            <Label htmlFor="settings-approval-mode">Approval mode</Label>
             <Select value={approvalMode} onValueChange={setApprovalMode}>
-              <SelectTrigger>
+              <SelectTrigger id="settings-approval-mode">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -121,18 +121,18 @@ export function SettingsPage() {
 
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Daily digest</p>
+              <Label htmlFor="settings-daily-digest" className="text-sm font-medium">Daily digest</Label>
               <p className="text-xs text-muted-foreground">Email summary of today's applications</p>
             </div>
-            <Switch checked={dailyDigest} onCheckedChange={setDailyDigest} />
+            <Switch id="settings-daily-digest" checked={dailyDigest} onCheckedChange={setDailyDigest} />
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Follow-up reminders</p>
+              <Label htmlFor="settings-followup" className="text-sm font-medium">Follow-up reminders</Label>
               <p className="text-xs text-muted-foreground">Remind me to follow up after 7 days</p>
             </div>
-            <Switch checked={followUpReminders} onCheckedChange={setFollowUpReminders} />
+            <Switch id="settings-followup" checked={followUpReminders} onCheckedChange={setFollowUpReminders} />
           </div>
 
           <Button onClick={() => saveRules.mutate()} size="sm" disabled={saveRules.isPending}>
@@ -173,8 +173,8 @@ export function SettingsPage() {
               <p className="text-sm font-medium">Delete account</p>
               <p className="text-xs text-muted-foreground">Permanently delete your account and all data</p>
             </div>
-            <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting} className="gap-2">
+              {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
               Delete account
             </Button>
           </div>

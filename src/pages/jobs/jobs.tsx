@@ -52,10 +52,14 @@ function JobCard({
   item,
   onRemove,
   onRescore,
+  isRemoving,
+  isRescoring,
 }: {
   item: JobWithMatch;
   onRemove: (jobId: string) => void;
   onRescore: (jobId: string) => void;
+  isRemoving: boolean;
+  isRescoring: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { job } = item;
@@ -111,7 +115,7 @@ function JobCard({
             <div className="flex items-center gap-1 shrink-0">
               {job.jobUrl && (
                 <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                  <a href={job.jobUrl} target="_blank" rel="noopener noreferrer">
+                  <a href={job.jobUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open job posting for ${job.title} at ${job.company}`}>
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 </Button>
@@ -121,24 +125,27 @@ function JobCard({
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => onRescore(job.id)}
-                title="Re-score"
+                aria-label={`Re-score ${job.title}`}
+                disabled={isRescoring}
               >
-                <RefreshCw className="h-3.5 w-3.5" />
+                <RefreshCw className={`h-3.5 w-3.5 ${isRescoring ? "animate-spin" : ""}`} />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-destructive hover:text-destructive"
                 onClick={() => onRemove(job.id)}
-                title="Remove"
+                aria-label={`Remove ${job.title}`}
+                disabled={isRemoving}
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                {isRemoving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => setExpanded((v) => !v)}
+                aria-label={expanded ? "Collapse job details" : "Expand job details"}
               >
                 {expanded ? (
                   <ChevronUp className="h-3.5 w-3.5" />
@@ -429,6 +436,8 @@ export function JobsPage() {
               item={item}
               onRemove={(id) => removeMutation.mutate(id)}
               onRescore={(id) => rescoreMutation.mutate(id)}
+              isRemoving={removeMutation.isPending && removeMutation.variables === item.job.id}
+              isRescoring={rescoreMutation.isPending && rescoreMutation.variables === item.job.id}
             />
           ))}
         </div>

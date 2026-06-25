@@ -35,6 +35,7 @@ function TagInput({
   placeholder?: string;
 }) {
   const [input, setInput] = useState("");
+  const inputId = `tag-input-${label.toLowerCase().replace(/\s+/g, "-")}`;
 
   const add = () => {
     const val = input.trim();
@@ -44,9 +45,10 @@ function TagInput({
 
   return (
     <div className="space-y-1.5">
-      <Label>{label}</Label>
+      <Label htmlFor={inputId}>{label}</Label>
       <div className="flex gap-2">
         <Input
+          id={inputId}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={placeholder}
@@ -54,7 +56,7 @@ function TagInput({
             if (e.key === "Enter") { e.preventDefault(); add(); }
           }}
         />
-        <Button type="button" variant="outline" size="sm" onClick={add}>
+        <Button type="button" variant="outline" size="sm" onClick={add} aria-label={`Add ${label}`}>
           <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -67,8 +69,9 @@ function TagInput({
                 type="button"
                 onClick={() => onChange(tags.filter((x) => x !== t))}
                 className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                aria-label={`Remove ${t}`}
               >
-                <X className="h-2.5 w-2.5" />
+                <X className="h-2.5 w-2.5" aria-hidden="true" />
               </button>
             </Badge>
           ))}
@@ -147,8 +150,8 @@ function PersonalInfoTab({
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label htmlFor="fullName">Full Name *</Label>
-          <Input id="fullName" value={form.fullName} onChange={set("fullName")} />
+          <Label htmlFor="fullName">Full Name <span aria-hidden="true">*</span></Label>
+          <Input id="fullName" value={form.fullName} onChange={set("fullName")} required aria-required="true" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="phone">Phone</Label>
@@ -310,12 +313,12 @@ function PreferencesTab({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label>Remote Preference</Label>
+          <Label htmlFor="pref-remote">Remote Preference</Label>
           <Select
             value={form.remotePreference}
             onValueChange={(v) => setForm((f) => ({ ...f, remotePreference: v as typeof f.remotePreference }))}
           >
-            <SelectTrigger>
+            <SelectTrigger id="pref-remote">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -328,12 +331,12 @@ function PreferencesTab({
         </div>
 
         <div className="space-y-1.5">
-          <Label>Approval Mode</Label>
+          <Label htmlFor="pref-approval">Approval Mode</Label>
           <Select
             value={form.approvalMode}
             onValueChange={(v) => setForm((f) => ({ ...f, approvalMode: v as typeof f.approvalMode }))}
           >
-            <SelectTrigger>
+            <SelectTrigger id="pref-approval">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -657,7 +660,7 @@ function ExperienceTab({ profile }: { profile: UserProfile | null }) {
   if (!experience.length && !education.length && !projects.length) {
     return (
       <div className="py-10 text-center">
-        <Briefcase className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+        <Briefcase className="h-10 w-10 text-muted-foreground mx-auto mb-3" aria-hidden="true" />
         <p className="text-sm font-medium mb-1">No experience on file yet</p>
         <p className="text-xs text-muted-foreground max-w-sm mx-auto">
           Upload your resume on the Resume page — Claude extracts your work history,

@@ -59,7 +59,7 @@ function TagInput({
           }}
           onBlur={() => add(input)}
         />
-        <Button type="button" variant="outline" size="icon" onClick={() => add(input)}>
+        <Button type="button" variant="outline" size="icon" onClick={() => add(input)} aria-label={`Add ${label}`}>
           <Plus className="h-4 w-4" />
         </Button>
       </div>
@@ -69,7 +69,7 @@ function TagInput({
           {values.map((v) => (
             <span key={v} className="inline-flex items-center gap-1 rounded-full border bg-secondary px-2.5 py-0.5 text-xs font-medium">
               {v}
-              <button type="button" onClick={() => onRemove(v)} className="hover:text-destructive">
+              <button type="button" onClick={() => onRemove(v)} className="hover:text-destructive" aria-label={`Remove ${v}`}>
                 <X className="h-3 w-3" />
               </button>
             </span>

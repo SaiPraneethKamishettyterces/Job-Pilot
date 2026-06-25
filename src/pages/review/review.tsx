@@ -135,17 +135,22 @@ export function ReviewPage() {
   const needsManual = app ? MANUAL_HANDOFF_STATUSES.includes(app.status) : false;
 
   return (
-    <div className="flex gap-6 h-full">
+    <div className="flex flex-col gap-6 md:flex-row md:h-full">
       {/* Queue list */}
-      <div className="w-72 shrink-0 space-y-2">
+      <div className="w-full md:w-72 md:shrink-0 space-y-2">
         <p className="text-sm text-muted-foreground">{queue.length} waiting</p>
         {queue.map((item) => {
           const b = statusBadge(item.status);
           return (
             <Card
               key={item.id}
+              role="button"
+              tabIndex={0}
               className={`cursor-pointer transition-all ${selectedId === item.id ? "ring-2 ring-primary" : "hover:bg-muted/50"}`}
               onClick={() => setSelectedId(item.id)}
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelectedId(item.id)}
+              aria-pressed={selectedId === item.id}
+              aria-label={`${item.company} – ${item.roleTitle}`}
             >
               <CardContent className="p-4 space-y-2">
                 <div className="flex items-start justify-between gap-2">
@@ -240,7 +245,7 @@ export function ReviewPage() {
                           <div key={a.id} className="rounded-lg border bg-background p-3 text-sm">
                             <p className="font-medium flex items-center gap-2">
                               {a.question}
-                              {a.isSensitive && <Badge variant="destructive" className="text-[10px]">sensitive</Badge>}
+                              {a.isSensitive && <Badge variant="destructive" className="text-xs">sensitive</Badge>}
                             </p>
                             <p className="text-muted-foreground mt-1">{a.answer || "(needs your input)"}</p>
                           </div>
@@ -313,20 +318,22 @@ export function ReviewPage() {
 
               <div className="flex flex-wrap gap-3">
                 <Button onClick={() => approve.mutate(app.id)} disabled={approve.isPending} variant="success">
-                  <CheckCircle className="h-4 w-4" /> Approve
+                  {approve.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  Approve
                 </Button>
                 <Button onClick={() => submit.mutate(app.id)} disabled={submit.isPending} variant="outline">
                   {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   Auto-fill &amp; Submit
                 </Button>
                 {app.jobUrl && (
-                  <a href={app.jobUrl} target="_blank" rel="noreferrer">
+                  <a href={app.jobUrl} target="_blank" rel="noreferrer" aria-label={`Open posting for ${app.roleTitle} at ${app.company}`}>
                     <Button variant="outline"><Eye className="h-4 w-4" /> Open posting</Button>
                   </a>
                 )}
                 <Button variant="outline" onClick={() => decline.mutate(app.id)} disabled={decline.isPending}
                         className="text-destructive hover:text-destructive ml-auto">
-                  <XCircle className="h-4 w-4" /> Decline
+                  {decline.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Decline
                 </Button>
               </div>
             </CardContent>

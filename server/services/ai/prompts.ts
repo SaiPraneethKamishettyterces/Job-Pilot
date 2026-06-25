@@ -10,21 +10,32 @@ export interface CoverLetterProfile {
 }
 
 export const coverLetterSystem = (tone: string) =>
-  `You are an expert job-application coach. Write compelling, honest, ${tone} application materials.
-Always personalise content to the candidate's actual background — never fabricate experience.
-Output only the requested text, no meta-commentary.`;
+  [
+    `You write a ${tone} cover letter AS THE JOB APPLICANT — in the FIRST PERSON ("I", "my"),`,
+    "as if the candidate wrote it themselves.",
+    "",
+    "NON-NEGOTIABLE:",
+    '1. First person throughout. NEVER write about the candidate in third person ("he/she/they"),',
+    "   and NEVER refer to the candidate by their own name as if describing someone else.",
+    "2. Specific: connect the candidate's real, concrete background (actual skills, roles,",
+    "   achievements) to THIS company and role. Lead with the strongest match.",
+    "3. Concise: 3-4 sentences, one tight paragraph. Natural and confident, not boastful.",
+    "4. No clichés or filler (no 'hard-working team player'). No buzzword salad.",
+    "5. Use ONLY the provided facts — never fabricate employers, titles, skills, dates, or metrics.",
+    "6. Output ONLY the letter text — no 'Dear...' header, no sign-off block, no meta-commentary, no markdown.",
+  ].join("\n");
 
 export const coverLetterUser = (jobDescription: string, p: CoverLetterProfile) =>
   `Job description:
 ${jobDescription}
 
-Candidate profile:
+MY background (write as me):
 Name: ${p.name}
 Skills: ${p.skills.join(", ")}
 Experience: ${p.experience}
 ${p.targetRole ? `Target role: ${p.targetRole}` : ""}
 
-Write a tailored cover letter paragraph (3-4 sentences) that highlights the strongest match between this candidate and the role.`;
+Write MY cover letter in the first person (3-4 sentences) highlighting the strongest match between my background and this role. Do not mention my own name in the third person.`;
 
 export const RESUME_PARSE_PROMPT = `You are a resume parser. Extract structured information from the resume text below.
 
@@ -157,11 +168,14 @@ export function buildTailorUserPrompt(args: {
 }
 
 // ─── Cold outreach email ─────────────────────────────────────────────────────
-export const COLD_EMAIL_SYSTEM =
-  "You are an expert job-application coach writing a short, honest cold outreach " +
-  "email from a candidate to a hiring manager or recruiter. Be specific, warm, and " +
-  "concise (max ~120 words). Personalise to the candidate's real background — never " +
-  "fabricate experience. Output only the email body (no subject line, no meta-commentary).";
+export const COLD_EMAIL_SYSTEM = [
+  'You write a short cold outreach email AS THE JOB APPLICANT — in the FIRST PERSON ("I", "my"),',
+  "to a hiring manager or recruiter, as if the candidate wrote it themselves.",
+  "NEVER write about the candidate in third person or refer to them by name as if describing",
+  "someone else. Be specific and warm; connect my real background to this role/company.",
+  "Concise: max ~120 words. Use ONLY the provided facts — never fabricate experience.",
+  "Output only the email body (no subject line, no meta-commentary, no markdown).",
+].join("\n");
 
 export function buildColdEmailPrompt(args: {
   jobTitle: string;
@@ -175,9 +189,9 @@ export function buildColdEmailPrompt(args: {
     `ROLE: ${args.jobTitle} at ${args.company}`,
     `JOB DESCRIPTION:\n${desc || "N/A"}`,
     "",
-    `CANDIDATE PROFILE:\n${args.profileSummary}`,
+    `MY PROFILE (write as me):\n${args.profileSummary}`,
     "",
-    "Write the cold outreach email body now.",
+    "Write MY cold outreach email body now, in the first person. Do not mention my own name in the third person.",
   ].join("\n");
 }
 

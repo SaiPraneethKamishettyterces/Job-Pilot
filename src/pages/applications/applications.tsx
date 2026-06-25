@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatRelativeDate } from "@/lib/utils";
+import { formatRelativeDate, formatTimeAgo } from "@/lib/utils";
 import { getApplications, archiveApplication, retryApplication } from "@/services/api";
 import type { Application, ApplicationStatus } from "@/types";
 
@@ -73,6 +73,19 @@ function ApplicationRow({ app, h }: { app: Application; h: RowHandlers }) {
         <div>
           <p className="font-medium text-sm">{app.company}</p>
           <p className="text-xs text-muted-foreground">{app.roleTitle}</p>
+          {app.scrapedAt && (
+            <p className="text-xs text-muted-foreground/70">Scraped {formatTimeAgo(app.scrapedAt)}</p>
+          )}
+          {/* TEMP(model-badge): which model tailored this resume. Remove with the Resume-page badge. */}
+          {app.resumeModel && (
+            <Badge
+              variant={app.resumeModel.includes("claude") ? "success" : app.resumeModel.includes("qwen") ? "secondary" : "destructive"}
+              className="mt-1 text-xs"
+              title={`Resume by ${app.resumeModel}`}
+            >
+              {app.resumeModel.includes("claude") ? "✦ Claude" : app.resumeModel.includes("qwen") ? "local model" : "fallback"}
+            </Badge>
+          )}
         </div>
       </TableCell>
       <TableCell><span className="text-xs text-muted-foreground">{app.atsPlatform ?? "—"}</span></TableCell>
@@ -90,7 +103,7 @@ function ApplicationRow({ app, h }: { app: Application; h: RowHandlers }) {
           {app.jobUrl && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <a href={app.jobUrl} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-muted transition-colors">
+                <a href={app.jobUrl} target="_blank" rel="noopener noreferrer" aria-label="View job posting" className="p-1 rounded hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                 </a>
               </TooltipTrigger>
@@ -100,7 +113,7 @@ function ApplicationRow({ app, h }: { app: Application; h: RowHandlers }) {
           {(app.status === "FAILED" || app.status === "FAILED_TECHNICAL") && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary"
+                <Button variant="ghost" size="icon" aria-label="Retry generation" className="h-7 w-7 text-muted-foreground hover:text-primary"
                   onClick={() => h.onRetry(app.id)} disabled={h.retryingId === app.id}>
                   {h.retryingId === app.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                 </Button>
@@ -111,7 +124,7 @@ function ApplicationRow({ app, h }: { app: Application; h: RowHandlers }) {
           {app.status !== "ARCHIVED" && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                <Button variant="ghost" size="icon" aria-label="Archive application" className="h-7 w-7 text-muted-foreground hover:text-destructive"
                   onClick={() => h.onArchive(app.id)} disabled={h.archivingId === app.id}>
                   {h.archivingId === app.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
                 </Button>
@@ -294,18 +307,20 @@ export function ApplicationsPage() {
                   <h3 className="text-sm font-semibold">{dayLabel(date)}</h3>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{apps.length} application{apps.length !== 1 ? "s" : ""}</span>
-                    {s.applied > 0 && <Badge variant="success" className="text-[10px]">{s.applied} applied</Badge>}
-                    {s.review > 0 && <Badge variant="warning" className="text-[10px]">{s.review} to review</Badge>}
-                    {s.failed > 0 && <Badge variant="destructive" className="text-[10px]">{s.failed} failed</Badge>}
+                    {s.applied > 0 && <Badge variant="success" className="text-xs">{s.applied} applied</Badge>}
+                    {s.review > 0 && <Badge variant="warning" className="text-xs">{s.review} to review</Badge>}
+                    {s.failed > 0 && <Badge variant="destructive" className="text-xs">{s.failed} failed</Badge>}
                   </div>
                 </div>
                 <Card>
-                  <Table>
-                    <AppTableHeader />
-                    <TableBody>
-                      {apps.map((app) => <ApplicationRow key={app.id} app={app} h={handlers} />)}
-                    </TableBody>
-                  </Table>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <AppTableHeader />
+                      <TableBody>
+                        {apps.map((app) => <ApplicationRow key={app.id} app={app} h={handlers} />)}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </Card>
               </div>
             );
@@ -314,12 +329,14 @@ export function ApplicationsPage() {
       ) : (
         // ── Flat list view ──
         <Card>
-          <Table>
-            <AppTableHeader />
-            <TableBody>
-              {applications.map((app) => <ApplicationRow key={app.id} app={app} h={handlers} />)}
-            </TableBody>
-          </Table>
+          <div className="overflow-x-auto">
+            <Table>
+              <AppTableHeader />
+              <TableBody>
+                {applications.map((app) => <ApplicationRow key={app.id} app={app} h={handlers} />)}
+              </TableBody>
+            </Table>
+          </div>
         </Card>
       )}
     </div>
