@@ -6,6 +6,8 @@ import { AdminShell } from "./components/AdminShell";
 import { AdminOverviewPage } from "./pages/overview";
 import { ExecutiveBillingPage } from "./pages/billing";
 import { AdminSourcesPage } from "./pages/sources";
+import { AdminExpensesPage } from "./pages/expenses";
+import { AdminJobAnalyticsPage } from "./pages/job-analytics";
 
 export function AdminApp() {
   return (
@@ -18,6 +20,8 @@ export function AdminApp() {
                 <Route path="/" element={<AdminOverviewPage />} />
                 <Route path="/financials" element={<ExecutiveBillingPage />} />
                 <Route path="/sources" element={<AdminSourcesPage />} />
+                <Route path="/expenses" element={<AdminExpensesPage />} />
+                <Route path="/job-analytics" element={<AdminJobAnalyticsPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AdminShell>
