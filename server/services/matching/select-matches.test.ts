@@ -70,4 +70,39 @@ describe("selectTopMatches", () => {
     // Only one company exists → cap must still be filled despite maxPerCompany.
     expect(selectTopMatches(scored, 3, { maxPerCompany: 2 })).toHaveLength(3);
   });
+
+  it("collapses cross-source duplicates by canonicalKey (highest score kept)", () => {
+    const li = { ...job("li", 80, "SHORTLIST", "Acme"), atsPlatform: "linkedin", canonicalKey: "acme|data engineer|remote" };
+    const gh = { ...job("gh", 92, "SHORTLIST", "Acme"), atsPlatform: "greenhouse", canonicalKey: "acme|data engineer|remote" };
+    const other = { ...job("o", 70, "SHORTLIST", "Globex"), canonicalKey: "globex|pm|remote" };
+    const top = selectTopMatches([li, gh, other], 5, { freshReserveRatio: 0 });
+    // The two same-canonicalKey rows collapse to one (gh, higher score); other stays.
+    expect(top.map((j) => j.jobId).sort()).toEqual(["gh", "o"]);
+  });
+
+  it("does not merge rows without a canonicalKey", () => {
+    const a = { ...job("a", 80, "SHORTLIST", "Acme") }; // canonicalKey undefined
+    const b = { ...job("b", 75, "SHORTLIST", "Acme") };
+    const top = selectTopMatches([a, b], 5, { freshReserveRatio: 0 });
+    expect(top).toHaveLength(2);
+  });
+
+  it("breaks score ties by freshness then apply-path", () => {
+    const now = Date.UTC(2026, 5, 24, 12, 0, 0);
+    const stale = { ...job("stale", 80), postedAt: new Date(now - 10 * 24 * 3_600_000) };
+    const fresh = { ...job("fresh", 80), postedAt: new Date(now - 1 * 3_600_000) };
+    const top = selectTopMatches([stale, fresh], 2, { nowMs: now, freshReserveRatio: 0 });
+    expect(top[0]!.jobId).toBe("fresh");
+  });
+
+  it("fresh-reserve swaps a stale high-score pick for a fresh one", () => {
+    const now = Date.UTC(2026, 5, 24, 12, 0, 0);
+    const old = (id: string, score: number) => ({ ...job(id, score), postedAt: new Date(now - 30 * 24 * 3_600_000) });
+    const recent = (id: string, score: number) => ({ ...job(id, score), postedAt: new Date(now - 2 * 3_600_000) });
+    // 4 stale high-score + 1 fresh lower-score; cap 4, reserve 25% → ≥1 fresh.
+    const scored = [old("a", 95), old("b", 93), old("c", 91), old("d", 90), recent("z", 70)];
+    const top = selectTopMatches(scored, 4, { nowMs: now, freshReserveRatio: 0.25, freshHours: 24 });
+    expect(top.map((j) => j.jobId)).toContain("z");
+    expect(top).toHaveLength(4);
+  });
 });

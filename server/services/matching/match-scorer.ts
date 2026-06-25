@@ -14,12 +14,21 @@ export type MatchResult = {
 // resume (experience entries, projects, education), not just a skills list.
 export type ProfileSnapshot = {
   skills: string[];
+  tools: string[];
   yearsExperience: number | null;
   summary: string | null;
   workAuthorization: string | null;
+  requiresSponsorship: boolean;
   targetRoles: string[];
+  acceptableAdjacentRoles: string[];
+  excludedRoles: string[];
+  seniorityBand: string | null;
+  employmentTypePreference: string[];
+  domains: string[];
+  industries: string[];
   blockedCompanies: string[];
   remotePreference: string;
+  places: string[]; // accepted location substrings (lowercased), "remote" stripped
   minSalary: number | null;
   matchThreshold: number;
   currentTitle: string | null;

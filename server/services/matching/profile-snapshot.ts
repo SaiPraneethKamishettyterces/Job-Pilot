@@ -48,19 +48,40 @@ function fmtProjects(items: Array<Record<string, unknown>>): string[] {
   }).filter((l) => l.trim().length > 0);
 }
 
+/** Parse a JSON column expected to hold a string[]; tolerate null/garbage. */
+function strArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim().length > 0) : [];
+}
+
 export async function buildProfileSnapshot(userId: string): Promise<ProfileSnapshot> {
-  const [cp, prefs] = await Promise.all([
+  const [cp, prefs, profile] = await Promise.all([
     loadCandidateProfile(userId),
     prisma.userPreference.findUnique({ where: { userId } }),
+    prisma.userProfile.findUnique({
+      where: { userId },
+      select: { seniorityBand: true, requiresSponsorship: true, toolsJson: true, domainsJson: true, industriesJson: true },
+    }),
   ]);
+
+  const locations = strArray(prefs?.locationsJson).map((s) => s.toLowerCase().trim()).filter(Boolean);
+
   return {
     skills: cp?.skills ?? [],
+    tools: strArray(profile?.toolsJson),
     yearsExperience: cp?.yearsOfExperience ?? null,
     summary: cp?.summary ?? null,
     workAuthorization: cp?.workAuthorization ?? null,
-    targetRoles: (prefs?.targetRolesJson as string[] | undefined) ?? [],
-    blockedCompanies: (prefs?.blockedCompaniesJson as string[] | undefined) ?? [],
+    requiresSponsorship: Boolean(profile?.requiresSponsorship),
+    targetRoles: strArray(prefs?.targetRolesJson),
+    acceptableAdjacentRoles: strArray(prefs?.acceptableAdjacentRolesJson),
+    excludedRoles: strArray(prefs?.excludedRolesJson),
+    seniorityBand: profile?.seniorityBand ?? null,
+    employmentTypePreference: strArray(prefs?.employmentTypePreferenceJson),
+    domains: strArray(profile?.domainsJson),
+    industries: strArray(profile?.industriesJson),
+    blockedCompanies: strArray(prefs?.blockedCompaniesJson),
     remotePreference: prefs?.remotePreference ?? "any",
+    places: locations.filter((l) => l !== "remote"),
     minSalary: prefs?.minSalary ?? null,
     matchThreshold: prefs?.matchThreshold ?? 70,
     currentTitle: cp?.currentTitle ?? null,
