@@ -7,6 +7,7 @@ export * from "./jobs.js";
 export * from "./subscription.js";
 export * from "./stats.js";
 export * from "./applications.js";
+export * from "./resumes.js";
 export * from "./billing.js";
 export * from "./activity.js";
 export * from "./account.js";

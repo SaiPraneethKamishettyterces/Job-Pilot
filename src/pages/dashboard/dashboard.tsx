@@ -12,15 +12,28 @@ import { getDashboardStats, type DashboardStats } from "@/services/api";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "success" | "warning" | "info" | "secondary" | "destructive" | "outline" }> = {
   APPLIED: { label: "Applied", variant: "success" },
+  APPROVED: { label: "Approved", variant: "success" },
+  ASSISTED_REQUIRED: { label: "Needs Your Help", variant: "warning" },
   NEEDS_APPROVAL: { label: "Needs Review", variant: "warning" },
   GENERATED: { label: "Generated", variant: "info" },
   SHORTLISTED: { label: "Shortlisted", variant: "secondary" },
   FAILED: { label: "Failed", variant: "destructive" },
   DRAFT_ONLY: { label: "Draft", variant: "outline" },
-  APPROVED: { label: "Approved", variant: "success" },
   DECLINED: { label: "Declined", variant: "secondary" },
   ARCHIVED: { label: "Archived", variant: "secondary" },
 };
+
+// Collapse repeats of the same job (same title + company) to one row, keeping the
+// first occurrence — the list arrives newest-first, so that's the latest status.
+function dedupeRecent<T extends { roleTitle: string; company: string }>(list: T[]): T[] {
+  const seen = new Set<string>();
+  return list.filter((a) => {
+    const k = `${a.roleTitle}|${a.company}`.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
 
 function ScoreBadge({ score }: { score: number }) {
   const variant = score >= 80 ? "success" : score >= 60 ? "warning" : "destructive";
@@ -126,7 +139,7 @@ export function DashboardPage() {
           icon={Briefcase}
           iconBg="bg-green-500/12 text-green-300 light:text-green-600"
           isLoading={isLoading}
-          onClick={() => navigate("/applications?status=APPLIED")}
+          onClick={() => navigate("/applied?status=APPLIED")}
         />
         <StatCard
           label="Needs Review"
@@ -150,7 +163,7 @@ export function DashboardPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">Recent Applications</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => navigate("/applications")}>
+                <Button variant="ghost" size="sm" onClick={() => navigate("/applied")}>
                   View all
                 </Button>
               </div>
@@ -174,7 +187,7 @@ export function DashboardPage() {
                 </div>
               ) : (
                 <div className="divide-y">
-                  {stats!.recentApplications.map((app) => {
+                  {dedupeRecent(stats!.recentApplications).map((app) => {
                     const statusCfg = STATUS_CONFIG[app.status] ?? { label: app.status, variant: "secondary" as const };
                     return (
                       <div key={app.id} className="flex items-center justify-between px-6 py-3 hover:bg-muted/50 transition-colors">
@@ -203,6 +216,14 @@ export function DashboardPage() {
                   })}
                 </div>
               )}
+              <div className="border-t border-border px-6 py-2.5">
+                <button
+                  onClick={() => navigate("/applied")}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                >
+                  View in Applied <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -271,7 +292,7 @@ export function DashboardPage() {
                 <CheckSquare className="h-4 w-4 text-warning" />
                 Review queue {(stats?.needsApproval ?? 0) > 0 && `(${stats!.needsApproval})`}
               </Button>
-              <Button variant="outline" className="w-full justify-start gap-3" onClick={() => navigate("/applications")}>
+              <Button variant="outline" className="w-full justify-start gap-3" onClick={() => navigate("/applied")}>
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 Follow-up tracker
               </Button>

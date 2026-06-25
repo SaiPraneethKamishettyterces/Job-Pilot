@@ -20,9 +20,10 @@ const named = <T extends string>(loader: () => Promise<Record<T, React.Component
 
 const OnboardingPage = named(() => import("./pages/onboarding/onboarding"), "OnboardingPage");
 const DashboardPage = named(() => import("./pages/dashboard/dashboard"), "DashboardPage");
-const ApplicationsPage = named(() => import("./pages/applications/applications"), "ApplicationsPage");
+const AppliedPage = named(() => import("./pages/applied/applied"), "AppliedPage");
 const RunsPage = named(() => import("./pages/runs/runs"), "RunsPage");
-const ResumePage = named(() => import("./pages/resume/resume"), "ResumePage");
+const ResumesPage = named(() => import("./pages/resume/resumes"), "ResumesPage");
+const ResumeEditorPage = named(() => import("./pages/resume/resume-editor"), "ResumeEditorPage");
 const ReviewPage = named(() => import("./pages/review/review"), "ReviewPage");
 const AnalyticsPage = named(() => import("./pages/analytics/analytics"), "AnalyticsPage");
 const BillingPage = named(() => import("./pages/billing/billing"), "BillingPage");
@@ -31,7 +32,6 @@ const JobsPage = named(() => import("./pages/jobs/jobs"), "JobsPage");
 const ApplyLinkPage = named(() => import("./pages/apply-link/apply-link"), "ApplyLinkPage");
 const CandidatesPage = named(() => import("./pages/candidates/candidates"), "CandidatesPage");
 const ProfileEditorPage = named(() => import("./pages/profile/profile-editor"), "ProfileEditorPage");
-const ActivityPage = named(() => import("./pages/activity/activity"), "ActivityPage");
 const ContactPage = named(() => import("./pages/contact/contact"), "ContactPage");
 const HelpPage = named(() => import("./pages/help/help"), "HelpPage");
 
@@ -67,13 +67,16 @@ export default function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/candidates" element={<CandidatesPage />} />
-                <Route path="/applications" element={<ApplicationsPage />} />
+                <Route path="/applied" element={<AppliedPage />} />
+                {/* Old Applications route folded into Applied — redirect any deep links. */}
+                <Route path="/applications" element={<Navigate to="/applied" replace />} />
                 <Route path="/apply-link" element={<ApplyLinkPage />} />
+                {/* Runs + Review still run in the background; reachable, just off the nav. */}
                 <Route path="/runs" element={<RunsPage />} />
-                <Route path="/resume" element={<ResumePage />} />
+                <Route path="/resume" element={<ResumesPage />} />
+                <Route path="/resume/:id" element={<ResumeEditorPage />} />
                 <Route path="/review" element={<ReviewPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
-                <Route path="/activity" element={<ActivityPage />} />
                 <Route path="/billing" element={<BillingPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/profile" element={<ProfileEditorPage />} />

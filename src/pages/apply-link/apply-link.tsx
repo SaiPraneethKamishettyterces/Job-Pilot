@@ -52,7 +52,7 @@ export function ApplyLinkPage() {
 
   const appliedMut = useMutation({
     mutationFn: markApplied,
-    onSuccess: () => { toast.success("Marked as applied"); navigate("/applications"); },
+    onSuccess: () => { toast.success("Marked as applied"); navigate("/applied"); },
     onError: (e: unknown) => toast.error(errMsg(e, "Failed to mark applied")),
   });
 

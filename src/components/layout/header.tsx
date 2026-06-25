@@ -14,12 +14,11 @@ const PAGE_TITLES: Record<string, string> = {
   "/jobs": "Jobs",
   "/runs": "Application Runs",
   "/candidates": "Candidates",
-  "/applications": "Applications",
+  "/applied": "Applied Jobs",
   "/review": "Review Queue",
-  "/resume": "Documents",
+  "/resume": "Resumes",
   "/profile": "Profile",
   "/analytics": "Analytics",
-  "/activity": "Activity",
   "/billing": "Billing",
   "/settings": "Settings",
 };
@@ -27,7 +26,7 @@ const PAGE_TITLES: Record<string, string> = {
 const PAGE_SUBTITLES: Record<string, string> = {
   "/dashboard": "Your job search at a glance",
   "/review": "Approve and submit prepared applications",
-  "/applications": "Every application JobPilot has prepared",
+  "/applied": "Every job you've applied to",
 };
 
 function timeAgo(iso: string): string {
@@ -93,7 +92,7 @@ export function Header() {
     e.preventDefault();
     const q = search.trim();
     if (!q) return;
-    navigate(`/applications?q=${encodeURIComponent(q)}`);
+    navigate(`/applied?q=${encodeURIComponent(q)}`);
   };
 
   return (
@@ -152,17 +151,17 @@ export function Header() {
                   <NotificationItem
                     key={ev.id}
                     ev={ev}
-                    onNavigate={() => navigate(ev.applicationId ? `/applications?q=${encodeURIComponent(ev.company ?? "")}` : "/activity")}
+                    onNavigate={() => navigate(ev.applicationId ? `/applied?q=${encodeURIComponent(ev.company ?? "")}` : "/applied")}
                   />
                 ))
               )}
             </div>
             <div className="border-t p-1">
               <button
-                onClick={() => navigate("/activity")}
+                onClick={() => navigate("/applied")}
                 className="flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-2 text-sm font-medium text-primary transition-colors hover:bg-muted/60"
               >
-                View all activity <ArrowRight className="h-3.5 w-3.5" />
+                View applied jobs <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
           </PopoverContent>

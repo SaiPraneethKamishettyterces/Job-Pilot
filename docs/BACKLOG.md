@@ -195,3 +195,5 @@ not on any local machine, and is verified end-to-end in that cloud environment._
 - 2.1 — plan upgrade/downgrade + Stripe proration; cap-enforcement tests per tier.
 - 2.2 — billing charts/date-range/per-user drill-down; admin-only access control.
 - 3.1 — per-application status timeline; dashboard empty/loading/error-state pass.
+
+- [ ] **Wire resume-editor edits into the tailoring pipeline** — the structured resume editor (`/resume/:id`) persists to `Resume.parsedJson.resumeContent` but tailoring/match still read the primary resume `rawText`. Feed edited content into `loadCandidateProfile` / `tailor-service` so edits actually change generated docs. (Deferred per product decision 2026-06-25.)

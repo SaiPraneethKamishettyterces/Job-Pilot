@@ -2,10 +2,8 @@ import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
-  FileText,
   Briefcase,
-  Play,
-  CheckSquare,
+  FileText,
   BarChart2,
   CreditCard,
   Settings,
@@ -15,7 +13,6 @@ import {
   UserCircle,
   HelpCircle,
   Mail,
-  Activity,
   Link2,
   Menu,
   X,
@@ -28,30 +25,27 @@ import { Button } from "@/components/ui/button";
 // Grouped by task, not a flat list of 10 — so "where is X" is answerable. Five
 // items used to read as the same thing (Runs/Applications/Review/Activity/Analytics);
 // the section headers now separate "what's running" from "what happened".
-type NavItem = { to: string; icon: typeof Play; label: string };
+type NavItem = { to: string; icon: typeof LayoutDashboard; label: string };
 const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: "Overview",
     items: [
       { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
       { to: "/analytics", icon: BarChart2, label: "Analytics" },
-      { to: "/activity", icon: Activity, label: "Activity" },
     ],
   },
   {
     title: "Pipeline",
     items: [
       { to: "/jobs", icon: Search, label: "Jobs Found" },
-      { to: "/runs", icon: Play, label: "Runs" },
-      { to: "/applications", icon: Briefcase, label: "Applications" },
-      { to: "/review", icon: CheckSquare, label: "Review Queue" },
+      { to: "/applied", icon: Briefcase, label: "Applied" },
       { to: "/apply-link", icon: Link2, label: "Apply with a Link" },
     ],
   },
   {
     title: "You",
     items: [
-      { to: "/resume", icon: FileText, label: "Documents" },
+      { to: "/resume", icon: FileText, label: "Resume" },
       { to: "/profile", icon: UserCircle, label: "Profile" },
     ],
   },
