@@ -11,6 +11,7 @@ export async function scrapeHiringCafe(keywords: string[], maxItems: number): Pr
     config.apify.actors.hiringcafe,
     { searchQueries, maxItems, includeDescriptionHtml: false },
     maxItems,
+    "hiringcafe",
   );
   return items.map((j, i) => ({
     source: "hiringcafe",

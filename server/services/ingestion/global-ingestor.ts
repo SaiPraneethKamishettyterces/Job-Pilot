@@ -8,6 +8,8 @@
 import { prisma } from "../../lib/db.js";
 import { logger } from "../../lib/logger.js";
 import { config } from "../../lib/config.js";
+import { tzParts } from "../../lib/clock.js";
+import { getRuntimeSettings } from "../admin/runtime-settings.js";
 import { fetchBoard, globalBoardRegistry, resolveBoards, type RawJob, type BoardRef } from "./ats-sources.js";
 import { fetchAggregatorSources } from "./sources/index.js";
 import { buildDemandProfile } from "./demand-profile.js";
@@ -60,6 +62,18 @@ async function fetchBoards(boards: BoardRef[]): Promise<RawJob[]> {
  * metrics and never throws — failures are recorded as status=FAILED.
  */
 export async function runGlobalIngestion(): Promise<string> {
+  // Weekend pause: no new postings on Sat/Sun (owner rule) — the pool serves the
+  // weekend from what's already there. Admin-overridable via weekendIngest (live).
+  const rt = await getRuntimeSettings();
+  const { isWeekend } = tzParts(rt.timezone);
+  if (isWeekend && !rt.weekendIngest) {
+    const run = await prisma.globalIngestRun.create({
+      data: { status: "COMPLETED", startedAt: new Date(), completedAt: new Date(), errorMessage: "weekend pause (no new postings)" },
+    });
+    logger.info({ runId: run.id }, "Global ingestion skipped (weekend pause)");
+    return run.id;
+  }
+
   const run = await prisma.globalIngestRun.create({
     data: { status: "FETCHING", startedAt: new Date() },
   });

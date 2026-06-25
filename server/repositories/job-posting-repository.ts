@@ -14,15 +14,45 @@ function toVectorLiteral(vec: number[]): string {
 export type UpsertResult = { id: string; isNew: boolean; contentChanged: boolean };
 
 /**
+ * Resolve the durable global first-sighting for a canonicalKey. Upserts the
+ * JobSeen ledger (which OUTLIVES the weekly pool purge) and returns the original
+ * firstSeenAt so callers can carry it forward — a still-open job re-pulled after a
+ * purge keeps its true first-seen date instead of looking 24h-fresh again. Returns
+ * `now` (and skips the ledger) when there's no canonicalKey. Race-safe via the PK
+ * upsert; a rare concurrent-insert P2002 is retried once.
+ */
+async function resolveGlobalFirstSeen(canonicalKey: string | null): Promise<Date> {
+  if (!canonicalKey) return new Date();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const seen = await prisma.jobSeen.upsert({
+        where: { canonicalKey },
+        create: { canonicalKey },
+        update: { lastSeenAt: new Date(), timesSeen: { increment: 1 } },
+      });
+      return seen.firstSeenAt;
+    } catch {
+      if (attempt === 1) return new Date(); // give up gracefully — novelty defaults to now
+    }
+  }
+  return new Date();
+}
+
+/**
  * Upsert a normalized job into the global pool keyed by its global dedupeKey.
  * New posting → insert. Existing → bump lastSeenAt and refresh fields; if the
  * contentHash changed, clear embeddedAt so the embed worker re-embeds it.
+ * firstSeenAt is carried forward from the durable JobSeen ledger so it reflects
+ * the GLOBAL first sighting (survives the weekly purge), not this row's insert.
  */
 export async function upsertPosting(n: NormalizedJob): Promise<UpsertResult> {
-  const existing = await prisma.jobPosting.findUnique({
-    where: { dedupeKey: n.dedupeKey },
-    select: { id: true, contentHash: true },
-  });
+  const [existing, firstSeenAt] = await Promise.all([
+    prisma.jobPosting.findUnique({
+      where: { dedupeKey: n.dedupeKey },
+      select: { id: true, contentHash: true },
+    }),
+    resolveGlobalFirstSeen(n.canonicalKey),
+  ]);
 
   const base = {
     sourceName: n.source,
@@ -53,6 +83,7 @@ export async function upsertPosting(n: NormalizedJob): Promise<UpsertResult> {
     toolsJson: n.tools as any,
     jobUrl: n.jobUrl,
     applyUrl: n.applyUrl,
+    canonicalKey: n.canonicalKey,
     postedAt: n.postedAt ? new Date(n.postedAt) : null,
     contentHash: n.contentHash,
     postingStatus: "active",
@@ -60,7 +91,9 @@ export async function upsertPosting(n: NormalizedJob): Promise<UpsertResult> {
 
   if (!existing) {
     const row = await prisma.jobPosting.create({
-      data: { ...base, dedupeKey: n.dedupeKey, lastSeenAt: new Date() },
+      // firstSeenAt = global first sighting (carried from JobSeen), NOT now() — so a
+      // re-pulled-after-purge open job is not re-flagged fresh.
+      data: { ...base, dedupeKey: n.dedupeKey, firstSeenAt, lastSeenAt: new Date() },
       select: { id: true },
     });
     return { id: row.id, isNew: true, contentChanged: true };
@@ -71,6 +104,7 @@ export async function upsertPosting(n: NormalizedJob): Promise<UpsertResult> {
     where: { id: existing.id },
     data: {
       ...base,
+      firstSeenAt, // re-assert the global first-seen
       lastSeenAt: new Date(),
       // Re-embed only when the content actually changed.
       ...(contentChanged ? { embeddedAt: null } : {}),
@@ -105,6 +139,9 @@ export type CandidateFilters = {
   requiresSponsorship?: boolean; // exclude postings that explicitly don't sponsor
   freshnessHours?: number; // "daily-new": only postings new (firstSeenAt OR postedAt) within N hours
   excludePostingIds?: string[]; // already-applied / already-materialized
+  sourceNamesIn?: string[]; // restrict to these sources (e.g. the Apify bucket)
+  sourceNamesNotIn?: string[]; // exclude these sources (e.g. free-plan excludes Apify)
+  excludeSeenForUserId?: string; // exclude canonicalKeys this user has already been shown (durable, cross-source)
 };
 
 export type PostingCandidate = {
@@ -131,6 +168,8 @@ export type PostingCandidate = {
   jobUrl: string | null;
   applyUrl: string | null;
   postedAt: Date | null;
+  sourceName: string | null;
+  canonicalKey: string | null;
   vectorScore: number; // cosine similarity in [0,1], higher = closer
 };
 
@@ -165,13 +204,29 @@ function filterConds(filters: CandidateFilters): Prisma.Sql[] {
   if (filters.excludePostingIds?.length) {
     conds.push(Prisma.sql`"id" NOT IN (${Prisma.join(filters.excludePostingIds)})`);
   }
+  if (filters.sourceNamesIn?.length) {
+    conds.push(Prisma.sql`lower("sourceName") IN (${Prisma.join(filters.sourceNamesIn.map((s) => s.toLowerCase()))})`);
+  }
+  if (filters.sourceNamesNotIn?.length) {
+    conds.push(
+      Prisma.sql`("sourceName" IS NULL OR lower("sourceName") NOT IN (${Prisma.join(filters.sourceNamesNotIn.map((s) => s.toLowerCase()))}))`,
+    );
+  }
+  if (filters.excludeSeenForUserId) {
+    // Durable, source-agnostic per-user already-shown guard (survives the purge).
+    // Index-backed via UserJobSeen @@unique([userId, canonicalKey]). Keyless
+    // postings (canonicalKey NULL) fail-open (never excluded here).
+    conds.push(
+      Prisma.sql`("canonicalKey" IS NULL OR NOT EXISTS (SELECT 1 FROM "UserJobSeen" u WHERE u."userId" = ${filters.excludeSeenForUserId} AND u."canonicalKey" = "JobPosting"."canonicalKey"))`,
+    );
+  }
   return conds;
 }
 
 const CANDIDATE_COLUMNS = Prisma.sql`"id", "title", "company", "location", "isRemote", "remoteType", "employmentType",
   "seniority", "salaryMin", "salaryMax", "salaryCurrency", "description", "descriptionClean",
   "requirementsJson", "skillsJson", "toolsJson", "experienceMin", "experienceMax",
-  "atsPlatform", "workAuthorization", "jobUrl", "applyUrl", "postedAt"`;
+  "atsPlatform", "workAuthorization", "jobUrl", "applyUrl", "postedAt", "sourceName", "canonicalKey"`;
 
 /**
  * Stage-A candidate generation: ANN over the pool by cosine distance to the user
@@ -233,4 +288,37 @@ export async function expireStalePostings(retentionDays: number): Promise<number
     WHERE "postingStatus" = 'active'
       AND "lastSeenAt" < now() - ${retentionDays} * interval '1 day'`;
   return n;
+}
+
+/**
+ * Weekly SAFE purge (spec): HARD-delete postings not re-seen within `retentionDays`
+ * AND not referenced by any per-user Job (so Application/JobMatch FKs never break).
+ * Keeps recent + user-acted postings → the weekend pool stays warm. Returns count.
+ */
+export async function purgeStalePostings(retentionDays: number): Promise<number> {
+  if (retentionDays < 0) return 0;
+  const n = await prisma.$executeRaw`
+    DELETE FROM "JobPosting" p
+    WHERE p."lastSeenAt" < now() - ${retentionDays} * interval '1 day'
+      AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."postingId" = p."id")`;
+  return n;
+}
+
+/**
+ * Retention for the durable novelty ledger: drop JobSeen rows not seen within
+ * `days`. A job unseen this long that reappears SHOULD re-acquire novelty, so this
+ * is the intended semantic, not a leak.
+ */
+export async function purgeStaleJobSeen(days: number): Promise<number> {
+  if (days < 0) return 0;
+  return prisma.$executeRaw`DELETE FROM "JobSeen" WHERE "lastSeenAt" < now() - ${days} * interval '1 day'`;
+}
+
+/**
+ * Retention for the per-user seen ledger: drop only `shown` rows past `days`
+ * (keep `applied` rows longer — they back apply-suppression + analytics).
+ */
+export async function purgeStaleUserJobSeen(days: number): Promise<number> {
+  if (days < 0) return 0;
+  return prisma.$executeRaw`DELETE FROM "UserJobSeen" WHERE "status" = 'shown' AND "lastShownAt" < now() - ${days} * interval '1 day'`;
 }
