@@ -37,6 +37,10 @@ export type NormalizedJob = {
   applyUrl: string | null;
   postedAt: string | null;
   dedupeKey: string;
+  // Source-AGNOSTIC key (normalized company + title + location/remote) used to
+  // collapse the SAME role seen across different sources (LinkedIn + the company
+  // ATS), which the source-scoped dedupeKey cannot. Heuristic by design.
+  canonicalKey: string;
   contentHash: string;
 };
 
@@ -239,6 +243,51 @@ function sha1(input: string): string {
   return createHash("sha1").update(input).digest("hex");
 }
 
+/** Normalize a company name for the canonical key (drop legal suffixes/punct). */
+function normalizeCompany(company: string): string {
+  return company
+    .toLowerCase()
+    .replace(/[.,]/g, "")
+    .replace(/\b(inc|llc|ltd|corp|co|gmbh|plc|company|the)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Source-agnostic canonical key: same role on LinkedIn and on the company's
+ * Greenhouse board → same key, so they collapse to one. Heuristic (platform title
+ * strings vary) — tuned conservative so distinct roles ("backend" vs "frontend")
+ * never falsely merge; the cost of a miss is a near-duplicate, not a wrong drop.
+ */
+/**
+ * Canonical role for the dedup key. Unlike normalizeTitle, it does NOT truncate at
+ * the first comma/dash (so "Engineer, Backend" ≠ "Engineer, Frontend") and it
+ * NORMALIZES seniority abbreviations rather than stripping them — "Sr."→"senior",
+ * "Jr."→"junior" — KEEPING the seniority word. So "Sr. Data Engineer" ≡ "Senior
+ * Data Engineer" (same job, different source spelling) but "Senior Data Engineer"
+ * ≠ "Data Engineer" (genuinely different reqs → respects experience-level matching).
+ */
+function canonicalRole(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[（(].*?[)）]/g, " ") // drop parentheticals
+    .replace(/\bsr\.?\b/g, "senior")
+    .replace(/\bjr\.?\b/g, "junior")
+    .replace(/[^a-z0-9+#]+/g, " ") // punctuation (incl. commas/dashes) → space, NO truncation
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function canonicalKeyFor(
+  company: string,
+  title: string,
+  location: string | null,
+  isRemote: boolean,
+): string {
+  const loc = isRemote ? "remote" : (location ?? "").toLowerCase().split(/[,/|]/)[0]!.trim();
+  return `${normalizeCompany(company)}|${canonicalRole(title)}|${loc}`;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function normalizeJob(raw: RawJob): NormalizedJob {
@@ -249,6 +298,7 @@ export function normalizeJob(raw: RawJob): NormalizedJob {
 
   const descriptionClean = raw.descriptionText.slice(0, 20000);
   const dedupeKey = `${raw.source}:${raw.company}:${raw.sourceJobId}`.toLowerCase();
+  const canonicalKey = canonicalKeyFor(raw.company, raw.title, raw.locationRaw, remote.isRemote);
   const contentHash = sha1(`${raw.title}|${raw.company}|${raw.locationRaw ?? ""}|${descriptionClean}`);
 
   return {
@@ -278,6 +328,7 @@ export function normalizeJob(raw: RawJob): NormalizedJob {
     applyUrl: raw.applyUrl,
     postedAt: raw.postedAt,
     dedupeKey,
+    canonicalKey,
     contentHash,
   };
 }

@@ -10,10 +10,13 @@
 // WAITING_FOR_APPROVAL | COMPLETED.
 import { prisma } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
+import { config } from "../lib/config.js";
 import { buildProfileSnapshot } from "../services/matching/profile-snapshot.js";
 import { generateCandidates } from "../services/matching/candidate-generator.js";
 import { rerankCandidates } from "../services/matching/rerank.js";
 import { selectTopMatches } from "../services/matching/select-matches.js";
+import { generateBalancedScored, APIFY_SOURCE_NAMES } from "../services/matching/balanced-shortlist.js";
+import { getRuntimeSettings } from "../services/admin/runtime-settings.js";
 import { generateApplicationDocuments } from "../services/application/application-generator.js";
 import { remainingApplications, getPlanLimits } from "../services/billing/usage-limits.js";
 import { notifyRunCompleted } from "../services/notifications/email-service.js";
@@ -65,20 +68,35 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
     });
     const alreadyApplied = new Set(appliedRows.map((r) => r.jobId).filter((v): v is string => Boolean(v)));
 
-    // Stage A: cheap vector + filter retrieval from the global pool (~200 candidates).
-    // Stage B: LLM-rerank only the top slice and materialize per-user Job/JobMatch.
-    // The result is the BEST matches, scored — not "first cap in discovery order".
-    const candidates = await generateCandidates(userId, snapshot);
-    await prisma.applicationRun.update({
-      where: { id: runId },
-      data: { jobsDiscovered: candidates.length },
-    });
-    const scored = await rerankCandidates(candidates, snapshot, userId, runId);
+    // PAID plans (when enabled) get a 50/50 Apify/free balanced shortlist with
+    // cross-source dedup + backfill. FREE plans never see Apify-sourced postings
+    // (no spend on non-paying users) and use the single-pool path.
+    const isPaid = planLimits.planName !== "Free";
+    const useBalanced = isPaid && config.matching.balancedSplitEnabled;
 
-    // Diversity: don't let one employer dominate the day's shortlist. At most
-    // ~1/3 of the cap (min 2) from a single company, then fill by next-best score.
-    const maxPerCompany = Math.max(2, Math.ceil(cap / 3));
-    const shortlist = selectTopMatches(scored, cap, { alreadyAppliedJobIds: alreadyApplied, maxPerCompany });
+    let shortlist;
+    if (useBalanced) {
+      // generateBalancedScored runs stage A + B per source bucket and merges 50/50;
+      // it returns the final ordered slate (already deduped + capped).
+      const splitPercent = (await getRuntimeSettings()).apifySplitPercent;
+      const balanced = await generateBalancedScored(userId, snapshot, runId, cap, {
+        ratio: splitPercent / 100,
+      });
+      // Honor already-applied + per-company diversity on top of the balanced merge.
+      const maxPerCompany = Math.max(2, Math.ceil(cap / 3));
+      shortlist = selectTopMatches(balanced, cap, { alreadyAppliedJobIds: alreadyApplied, maxPerCompany });
+    } else {
+      // Stage A: cheap vector + filter retrieval from the global pool (~200 candidates).
+      // Stage B: LLM-rerank only the top slice and materialize per-user Job/JobMatch.
+      const candidates = await generateCandidates(userId, snapshot, undefined, {
+        sourceNamesNotIn: APIFY_SOURCE_NAMES, // free plan: free sources only
+      });
+      await prisma.applicationRun.update({ where: { id: runId }, data: { jobsDiscovered: candidates.length } });
+      const scored = await rerankCandidates(candidates, snapshot, userId, runId);
+      // Diversity: don't let one employer dominate the day's shortlist.
+      const maxPerCompany = Math.max(2, Math.ceil(cap / 3));
+      shortlist = selectTopMatches(scored, cap, { alreadyAppliedJobIds: alreadyApplied, maxPerCompany });
+    }
     const shortlisted = shortlist.length;
 
     await prisma.applicationRun.update({
@@ -102,6 +120,12 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
           matchScore: item.score, status: "SHORTLISTED",
         },
       });
+      // Promote the per-user seen ledger to "applied" (kept longer than "shown").
+      if (item.canonicalKey) {
+        await prisma.userJobSeen
+          .updateMany({ where: { userId, canonicalKey: item.canonicalKey }, data: { status: "applied" } })
+          .catch(() => {});
+      }
       try {
         const gen = await generateApplicationDocuments(application.id);
         done++;

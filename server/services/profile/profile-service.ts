@@ -56,6 +56,13 @@ export type ProfileInput = {
   experience?: unknown[];
   projects?: unknown[];
   certifications?: string[];
+  // Candidate level + skill taxonomy used by hard gates + factor scoring.
+  seniorityBand?: string | null;
+  tools?: string[];
+  cloudPlatforms?: string[];
+  secondarySkills?: string[];
+  domains?: string[];
+  industries?: string[];
 } & GenericProfileFields;
 
 // Keys of the generic block — used to pass only defined values through to Prisma.
@@ -90,6 +97,12 @@ export type PreferencesInput = {
   applicationsPerDay?: number;
   approvalMode?: "AUTO_APPLY" | "ASSISTED_APPLY" | "ALWAYS_REVIEW" | "DRAFT_ONLY";
   matchThreshold?: number;
+  // Hard-gate inputs (optional; only written when provided).
+  acceptableAdjacentRoles?: string[];
+  excludedRoles?: string[];
+  employmentTypePreference?: string[];
+  preferredSources?: string[];
+  excludedSources?: string[];
 };
 
 export async function getProfile(userId: string) {
@@ -120,6 +133,12 @@ export async function upsertProfile(userId: string, data: ProfileInput) {
   if (data.experience !== undefined) payload["experienceJson"] = data.experience;
   if (data.projects !== undefined) payload["projectsJson"] = data.projects;
   if (data.certifications !== undefined) payload["certificationsJson"] = data.certifications;
+  setIf("seniorityBand", data.seniorityBand);
+  if (data.tools !== undefined) payload["toolsJson"] = data.tools;
+  if (data.cloudPlatforms !== undefined) payload["cloudPlatformsJson"] = data.cloudPlatforms;
+  if (data.secondarySkills !== undefined) payload["secondarySkillsJson"] = data.secondarySkills;
+  if (data.domains !== undefined) payload["domainsJson"] = data.domains;
+  if (data.industries !== undefined) payload["industriesJson"] = data.industries;
   Object.assign(payload, pickGeneric(data));
 
   return prisma.userProfile.upsert({
@@ -156,9 +175,17 @@ export async function upsertPreferences(userId: string, data: PreferencesInput) 
       | "DRAFT_ONLY",
     matchThreshold: data.matchThreshold ?? 70,
   };
+  // New gate-input arrays: only written when the caller actually provided them, so
+  // a partial preferences save never wipes them. (eslint: prisma Json typing)
+  const extra: Record<string, unknown> = {};
+  if (data.acceptableAdjacentRoles !== undefined) extra["acceptableAdjacentRolesJson"] = data.acceptableAdjacentRoles;
+  if (data.excludedRoles !== undefined) extra["excludedRolesJson"] = data.excludedRoles;
+  if (data.employmentTypePreference !== undefined) extra["employmentTypePreferenceJson"] = data.employmentTypePreference;
+  if (data.preferredSources !== undefined) extra["preferredSourcesJson"] = data.preferredSources;
+  if (data.excludedSources !== undefined) extra["excludedSourcesJson"] = data.excludedSources;
   return prisma.userPreference.upsert({
     where: { userId },
-    create: { userId, ...payload },
-    update: payload,
+    create: { userId, ...payload, ...extra },
+    update: { ...payload, ...extra },
   });
 }

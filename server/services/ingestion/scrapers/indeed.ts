@@ -12,6 +12,7 @@ export async function scrapeIndeed(keywords: string[], maxItems: number): Promis
       config.apify.actors.indeed,
       { position, location: "United States", country: "US", maxItemsPerSearch: perSearch },
       perSearch,
+      "indeed",
     );
     for (const j of items) {
       out.push({

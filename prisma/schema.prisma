@@ -31,6 +31,7 @@ model User {
   subscription   Subscription?
   jobs           Job[]
   subscriptionEvents SubscriptionEvent[]
+  jobsSeen       UserJobSeen[]
 }
 
 // ─── Profile ─────────────────────────────────────────────────────────────────
@@ -75,6 +76,14 @@ model UserProfile {
   currentEmployer  String?
   currentTitle     String?
   yearsExperience  Int?
+  // Candidate level + skill taxonomy used by hard gates + factor scoring
+  // (seniorityBand: entry|junior_associate|early_mid|mid_senior|senior|staff_lead|principal_executive)
+  seniorityBand    String?
+  toolsJson        Json     @default("[]")
+  cloudPlatformsJson Json   @default("[]")
+  secondarySkillsJson Json  @default("[]")
+  domainsJson      Json     @default("[]")
+  industriesJson   Json     @default("[]")
 
   // Education
   highestEducation String?   // e.g. Bachelor's, Master's
@@ -122,6 +131,11 @@ model UserPreference {
   userId               String   @unique
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   targetRolesJson      Json     @default("[]")
+  acceptableAdjacentRolesJson Json @default("[]")
+  excludedRolesJson    Json     @default("[]")
+  employmentTypePreferenceJson Json @default("[]")
+  preferredSourcesJson Json     @default("[]")
+  excludedSourcesJson  Json     @default("[]")
   targetCompaniesJson  Json     @default("[]")
   blockedCompaniesJson Json     @default("[]")
   locationsJson        Json     @default("[]")
@@ -252,11 +266,18 @@ model JobPosting {
   source            JobSource? @relation(fields: [sourceId], references: [id])
 
   // Provenance
-  sourceName        String?  // greenhouse | lever | ashby | workable | remotive | remoteok | adzuna | themuse | usajobs | arbeitnow
+  sourceName        String?  // greenhouse | lever | ashby | workable | remotive | remoteok | adzuna | themuse | usajobs | arbeitnow | linkedin | indeed | hiringcafe
   sourceJobId       String?
   atsPlatform       String?
   jobUrl            String?
   applyUrl          String?
+  companyCareerUrl  String?
+  // Cross-source canonicalization (spec Pt 8). canonicalKey is source-agnostic so
+  // the same role from multiple sources can be collapsed; sourceCount/primarySource
+  // track how many sources saw it and which is the best apply path.
+  canonicalKey      String?
+  sourceCount       Int      @default(1)
+  primarySource     String?
 
   // Core fields (same shape as Job, minus userId/runId)
   title             String
@@ -341,6 +362,72 @@ model GlobalIngestRun {
   completedAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+}
+
+// Admin-editable runtime settings (spec Pt 18). Key→JSON value overlay on top of
+// env config so the admin can change spend caps, the global-run schedule, the
+// 50/50 split, etc. LIVE without a redeploy. Read via runtime-settings.ts.
+model AdminSetting {
+  key       String   @id
+  value     String   // JSON-encoded
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+// Durable, content-keyed novelty ledger — SURVIVES the weekly pool purge. With
+// ~70% of postings lacking a real postedAt, firstSeenAt is the freshness signal,
+// and the purge would otherwise reset it (a still-open job re-pulled next week
+// would look 24h-fresh again). JobSeen remembers the GLOBAL first sighting per
+// canonicalKey so upsertPosting can carry it forward. Keyed by the source-agnostic
+// canonicalKey (job-normalizer.canonicalKeyFor). Retained longer than the pool.
+model JobSeen {
+  canonicalKey String   @id
+  firstSeenAt  DateTime @default(now()) // global first sighting, ever
+  lastSeenAt   DateTime @default(now())
+  timesSeen    Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([lastSeenAt])
+}
+
+// Per-user, content-keyed "already surfaced" ledger — also survives the purge and
+// is source-agnostic, so a user is never re-shown the same logical job after a
+// purge or from a different source. Complements the applied-guard (postingId based).
+model UserJobSeen {
+  id           String   @id @default(cuid())
+  userId       String
+  canonicalKey String
+  status       String   @default("shown") // shown | applied
+  firstShownAt DateTime @default(now())
+  lastShownAt  DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, canonicalKey])
+  @@index([userId])
+}
+
+// Per-source per-day metrics + cost (spec Pt 14). Drives the admin Job-Pulling
+// Expenses page, the cost_per_high_match_job yield metric, and the daily budget
+// rebalance. `costUsd` is the real-dollar Apify spend attributed to the source.
+model SourceDailyMetrics {
+  id                String   @id @default(cuid())
+  date              DateTime @db.Date           // calendar day bucket
+  source            String                       // linkedin | indeed | hiringcafe | greenhouse | ...
+  actorName         String?
+  totalScraped      Int      @default(0)
+  totalNew          Int      @default(0)
+  totalDuplicates   Int      @default(0)
+  jobsHighMatch     Int      @default(0)         // postings that became an 80+ match
+  jobsSelected      Int      @default(0)
+  applied           Int      @default(0)
+  costUsd           Float    @default(0)         // real-dollar spend (Apify usageTotalUsd / rate)
+  actorRuns         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([date, source])
+  @@index([date])
 }
 
 // T2 — per-user job row. In the global-pool architecture this is a THIN per-user
@@ -436,6 +523,22 @@ model JobMatch {
   stage       String?  // candidate | reranked
   vectorScore Float?   // cosine similarity from candidate generation (stage A)
   featureScore Float?  // deterministic feature score before LLM rerank (stage B)
+  // Explainable multi-factor scoring (spec Pt 10-12, 16) — additive.
+  statusTier  String?  // APPLY_NOW | STRONG_MATCH | GOOD_MATCH | BACKUP | LOW_PRIORITY | REJECTED
+  reasonCodesJson Json @default("[]") // structured ReasonCode[]
+  gateStatus  String?  // passed | rejected
+  failedGatesJson Json @default("[]") // NegativeCode[] of failed hard gates
+  // Per-factor 0-100 breakdown
+  roleFitScore       Int?
+  experienceFitScore Int?
+  skillScore         Int?
+  atsScore           Int?
+  locationScore      Int?
+  workAuthScore      Int?
+  domainScore        Int?
+  compensationScore  Int?
+  recencyScore       Int?
+  feasibilityScore   Int?
   createdAt   DateTime @default(now())
 
   @@unique([jobId, userId])
@@ -458,6 +561,8 @@ model ApplicationRun {
   jobsUpdated       Int       @default(0)
   duplicatesSkipped Int       @default(0)
   jobsShortlisted   Int       @default(0)
+  jobsGated         Int       @default(0)  // candidates rejected by hard gates before scoring
+  gateFailuresJson  Json      @default("{}") // { NegativeCode: count } aggregate for this run
   applicationsTotal Int       @default(0)
   applicationsDone  Int       @default(0)
 

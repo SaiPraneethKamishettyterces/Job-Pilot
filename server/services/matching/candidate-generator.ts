@@ -37,6 +37,9 @@ export async function generateCandidates(
   userId: string,
   snapshot: ProfileSnapshot,
   limit = CANDIDATE_LIMIT,
+  // Extra hard filters (e.g. source bucket for the 50/50 split). Merged into the
+  // base filters for BOTH the vector and no-vector retrieval paths.
+  extra: Partial<CandidateFilters> = {},
 ): Promise<PostingCandidate[]> {
   // Preferred locations (prefs) + sponsorship requirement (profile) aren't on the
   // snapshot — load the few extra fields we need for the hard filters.
@@ -58,6 +61,9 @@ export async function generateCandidates(
     minSalary: snapshot.minSalary,
     requiresSponsorship: Boolean(profile?.requiresSponsorship),
     excludePostingIds,
+    // Durable, cross-source, survives-purge per-user already-shown guard (Gap 3).
+    excludeSeenForUserId: userId,
+    ...extra,
   };
 
   // Run a retrieval at the "daily-new" window; if too few, widen once to the

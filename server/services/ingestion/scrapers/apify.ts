@@ -4,6 +4,7 @@
 import { ApifyClient } from "apify-client";
 import { config } from "../../../lib/config.js";
 import { logger } from "../../../lib/logger.js";
+import { canSpendApify, estimateRunCostUsd, recordApifySpend } from "../apify-budget.js";
 
 let client: ApifyClient | null = null;
 
@@ -16,18 +17,30 @@ function getClient(): ApifyClient {
   return client;
 }
 
-/** Run an actor with input and return its dataset items (capped at `maxItems`). */
+/**
+ * Run an actor with input and return its dataset items (capped at `maxItems`).
+ * Enforces the hard daily spend cap BEFORE running and records real-dollar spend
+ * after — so a real Apify token can never run uncapped. `sourceKey` attributes the
+ * cost (linkedin | indeed | hiringcafe) for the admin expenses page.
+ */
 export async function runActor(
   actorSlug: string,
   input: Record<string, unknown>,
   maxItems: number,
+  sourceKey?: string,
 ): Promise<Record<string, unknown>[]> {
   if (!hasApify()) return [];
+  // Hard spend cap — skip the paid run entirely once today's budget is exhausted.
+  if (!(await canSpendApify())) return [];
   try {
     const run = await getClient().actor(actorSlug).call(input);
     if (!run?.defaultDatasetId) return [];
     const { items } = await getClient().dataset(run.defaultDatasetId).listItems({ limit: Math.max(1, maxItems) });
-    return (items ?? []) as Record<string, unknown>[];
+    const results = (items ?? []) as Record<string, unknown>[];
+    // Attribute spend (prefer the actor-reported usage; else a per-result fallback).
+    const costUsd = estimateRunCostUsd(run as { usageTotalUsd?: number | null }, results.length);
+    await recordApifySpend(sourceKey ?? actorSlug, actorSlug, costUsd, results.length);
+    return results;
   } catch (err) {
     logger.warn({ actorSlug, err: String(err) }, "Apify actor run failed");
     return [];

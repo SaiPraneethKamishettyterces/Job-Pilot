@@ -143,13 +143,27 @@ export const config = {
     freshnessHours: num("MATCH_FRESHNESS_HOURS", 24),
     freshnessFallbackHours: num("MATCH_FRESHNESS_FALLBACK_HOURS", 168),
     minFreshCandidates: num("MATCH_MIN_FRESH_CANDIDATES", 40),
+    // Weekend freshness widening (Sat/Sun): no new postings come in, so widen the
+    // window so Thu/Fri jobs still surface (the fallback also backstops this).
+    weekendFreshnessHours: num("MATCH_WEEKEND_FRESHNESS_HOURS", 96),
+    // 50/50 balanced shortlist for PAID plans: ~this % of the slate is Apify-sourced,
+    // the rest free-sourced (yield-tuned within each half). Free plans get 0% Apify.
+    balancedSplitEnabled: bool("MATCH_BALANCED_SPLIT_ENABLED", true),
+    apifySplitPercent: num("MATCH_APIFY_SPLIT_PERCENT", 50),
   },
 
   // ── Pool retention ──────────────────────────────────────────────────────────
   ingest: {
-    // Postings not re-seen within this many days are soft-expired (dropped from
-    // matching); a later sighting re-activates them.
-    poolRetentionDays: num("POOL_RETENTION_DAYS", 21),
+    // Weekly purge window: postings not re-seen within this many days AND not
+    // referenced by any Application/JobMatch are hard-deleted by the weekly purge.
+    // 7 = a rolling week (keeps the weekend pool warm; FKs never break).
+    poolRetentionDays: num("POOL_RETENTION_DAYS", 7),
+    // Durable seen-ledger retention (de-dup/novelty). JobSeen/UserJobSeen rows
+    // outlive the weekly pool purge so novelty + per-user "already shown" survive
+    // across purges; cleaned after this many days unseen. A job unseen this long
+    // that reappears SHOULD re-acquire novelty.
+    jobSeenRetentionDays: num("JOB_SEEN_RETENTION_DAYS", 90),
+    userJobSeenRetentionDays: num("USER_JOB_SEEN_RETENTION_DAYS", 90),
     // COST LEVER (Part 1.7): cap how many pending postings get embedded per ingest
     // cycle. Embeddings are the real cost of a large registry-synced pool; the rest
     // embed on later cycles (or lazily when first matched). 0 = unlimited.
@@ -178,6 +192,18 @@ export const config = {
     },
     // Cap on distinct demand keywords sent to the (paid) scrapers per run.
     maxKeywords: num("APIFY_MAX_KEYWORDS", 5),
+    // LinkedIn actor server-side filters (we WERE leaving these unused). publishedAt
+    // r86400=24h, r604800=7d, r2592000=30d — the only true server-side recency filter
+    // across all our sources. Default to 24h to serve the owner's "fresh" goal.
+    linkedinPublishedAt: optional("APIFY_LINKEDIN_PUBLISHED_AT", "r86400"),
+    linkedinLocation: optional("APIFY_LINKEDIN_LOCATION", "United States"),
+    // Hard real-dollar spend guard (admin-editable). Checked BEFORE every Apify run
+    // and the on-demand test pull; at the hard cap the paid track self-skips so a
+    // real token can never run uncapped. Resets daily.
+    spendHardUsdPerDay: numFloat("APIFY_SPEND_HARD_USD_PER_DAY", 5),
+    spendSoftUsdPerDay: numFloat("APIFY_SPEND_SOFT_USD_PER_DAY", 4),
+    // Fallback per-result USD rate when the actor run doesn't report usageTotalUsd.
+    fallbackUsdPerResult: numFloat("APIFY_FALLBACK_USD_PER_RESULT", 0.01),
   },
 
   // ── ATS registry (Track 1: wide company coverage) ────────────────────────────
@@ -250,16 +276,25 @@ export const config = {
       // as stuck (e.g. the instance that started it was recycled) and recovered.
       stuckRunMinutes: num("STUCK_RUN_MINUTES", 20),
     },
-    // Daily auto-apply scheduler: once per day at `hour` (server-local), start a
-    // run for every active subscriber who hasn't already had a scheduled run that
-    // day. In-process (like retry); off in test.
+    // Scheduler: GLOBAL ingestion (shared pool) is decoupled from per-user runs.
+    //  - globalRunMode "manual" (default, for dev): the timer never auto-ingests;
+    //    only the admin "Run global ingestion now" action triggers it. "auto":
+    //    fire ≤ once/24h at runHour (default 0 = overnight, so the daytime pool is
+    //    fresh). All admin-editable.
+    //  - Per-user runs are USER-INITIATED from the dashboard. The legacy daily
+    //    auto-dispatch is kept but OFF by default (autoDispatchEnabled).
+    //  - Weekends: no new postings (ingestion fetch skips Sat/Sun).
+    //  - Weekly purge: hard-delete stale unreferenced postings (default Monday).
     scheduler: {
       enabled: bool("DAILY_SCHEDULER_ENABLED", NODE_ENV !== "test"),
-      hour: num("DAILY_RUN_HOUR", 8), // server-local hour 0–23
+      globalRunMode: (optional("GLOBAL_RUN_MODE", "manual") === "auto" ? "auto" : "manual") as "manual" | "auto",
+      runHour: num("GLOBAL_RUN_HOUR", 0), // 0–23, used when globalRunMode=auto
+      timezone: optional("SCHEDULER_TIMEZONE", "UTC"),
       checkIntervalMinutes: num("DAILY_SCHEDULER_INTERVAL_MINUTES", 30),
-      // Refresh the shared global job pool once/day at/after this hour, BEFORE the
-      // per-user runs at `hour` read from it. Keep it earlier than `hour`.
-      ingestHour: num("GLOBAL_INGEST_HOUR", 6),
+      weekendIngest: bool("WEEKEND_INGEST_ENABLED", false), // false = no new postings Sat/Sun
+      autoDispatchEnabled: bool("AUTO_DISPATCH_ENABLED", false), // legacy daily per-user dispatch
+      autoDispatchHour: num("DAILY_RUN_HOUR", 8),
+      purgeWeekday: num("POOL_PURGE_WEEKDAY", 1), // 0=Sun … 1=Mon (weekly hard purge)
     },
   },
 
