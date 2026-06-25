@@ -114,6 +114,13 @@ export const onboardingSchema = z.object({
   applicationsPerDay: z.number().min(1).max(50),
   approvalMode: approvalModeEnum,
   matchThreshold: z.number().min(50).max(95),
+  // Hard-gate + factor-scoring inputs (optional; default to none).
+  acceptableAdjacentRoles: z.array(z.string()).optional(),
+  excludedRoles: z.array(z.string()).optional(),
+  employmentTypePreference: z.array(z.string()).optional(),
+  seniorityBand: z.string().optional(),
+  tools: z.array(z.string()).optional(),
+  domains: z.array(z.string()).optional(),
   ...genericProfileFields,
 });
 export type OnboardingInput = z.infer<typeof onboardingSchema>;
@@ -135,6 +142,12 @@ export const profileSchema = z.object({
   experience: z.array(z.object({}).passthrough()).optional(),
   projects: z.array(z.object({}).passthrough()).optional(),
   certifications: z.array(z.string()).optional(),
+  seniorityBand: z.string().optional(),
+  tools: z.array(z.string()).optional(),
+  cloudPlatforms: z.array(z.string()).optional(),
+  secondarySkills: z.array(z.string()).optional(),
+  domains: z.array(z.string()).optional(),
+  industries: z.array(z.string()).optional(),
   ...genericProfileFields,
 });
 export type ProfileFormInput = z.infer<typeof profileSchema>;
@@ -150,6 +163,12 @@ export const preferencesSchema = z.object({
   applicationsPerDay: z.number().min(1).max(50).optional(),
   approvalMode: approvalModeEnum.optional(),
   matchThreshold: z.number().min(50).max(95).optional(),
+  acceptableAdjacentRoles: z.array(z.string()).optional(),
+  excludedRoles: z.array(z.string()).optional(),
+  employmentTypePreference: z.array(z.string()).optional(),
+  seniorityBand: z.string().optional(),
+  tools: z.array(z.string()).optional(),
+  domains: z.array(z.string()).optional(),
 });
 export type PreferencesFormInput = z.infer<typeof preferencesSchema>;
 

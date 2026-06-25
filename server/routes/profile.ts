@@ -14,7 +14,10 @@ export const profileRouter = Router();
 
 function formatProfile(p: Record<string, unknown> | null) {
   if (!p) return null;
-  const { skillsJson, educationJson, experienceJson, projectsJson, certificationsJson, ...rest } = p;
+  const {
+    skillsJson, educationJson, experienceJson, projectsJson, certificationsJson,
+    toolsJson, cloudPlatformsJson, secondarySkillsJson, domainsJson, industriesJson, ...rest
+  } = p;
   return {
     ...rest,
     skills: skillsJson ?? [],
@@ -22,18 +25,32 @@ function formatProfile(p: Record<string, unknown> | null) {
     experience: experienceJson ?? [],
     projects: projectsJson ?? [],
     certifications: certificationsJson ?? [],
+    tools: toolsJson ?? [],
+    cloudPlatforms: cloudPlatformsJson ?? [],
+    secondarySkills: secondarySkillsJson ?? [],
+    domains: domainsJson ?? [],
+    industries: industriesJson ?? [],
   };
 }
 
 function formatPreferences(p: Record<string, unknown> | null) {
   if (!p) return null;
-  const { targetRolesJson, targetCompaniesJson, blockedCompaniesJson, locationsJson, ...rest } = p;
+  const {
+    targetRolesJson, targetCompaniesJson, blockedCompaniesJson, locationsJson,
+    acceptableAdjacentRolesJson, excludedRolesJson, employmentTypePreferenceJson,
+    preferredSourcesJson, excludedSourcesJson, ...rest
+  } = p;
   return {
     ...rest,
     targetRoles: targetRolesJson ?? [],
     targetCompanies: targetCompaniesJson ?? [],
     blockedCompanies: blockedCompaniesJson ?? [],
     locations: locationsJson ?? [],
+    acceptableAdjacentRoles: acceptableAdjacentRolesJson ?? [],
+    excludedRoles: excludedRolesJson ?? [],
+    employmentTypePreference: employmentTypePreferenceJson ?? [],
+    preferredSources: preferredSourcesJson ?? [],
+    excludedSources: excludedSourcesJson ?? [],
   };
 }
 

@@ -80,6 +80,10 @@ onboardingRouter.post("/complete", requireAuth, asyncHandler(async (req: AuthReq
     veteranStatus: data.veteranStatus,
     disabilityStatus: data.disabilityStatus,
     consentToDataProcessing: data.consentToDataProcessing,
+    // Candidate level + skill taxonomy used by hard gates + factor scoring.
+    seniorityBand: data.seniorityBand,
+    tools: data.tools,
+    domains: data.domains,
   });
 
   await upsertPreferences(userId, {
@@ -92,6 +96,9 @@ onboardingRouter.post("/complete", requireAuth, asyncHandler(async (req: AuthReq
     applicationsPerDay: data.applicationsPerDay,
     approvalMode: data.approvalMode,
     matchThreshold: data.matchThreshold,
+    acceptableAdjacentRoles: data.acceptableAdjacentRoles,
+    excludedRoles: data.excludedRoles,
+    employmentTypePreference: data.employmentTypePreference,
   });
 
   await userRepository.update(userId, { onboardingDone: true });
