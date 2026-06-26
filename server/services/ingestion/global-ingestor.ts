@@ -18,9 +18,20 @@ import { normalizeJob } from "./job-normalizer.js";
 import { upsertPosting, expireStalePostings } from "../../repositories/job-posting-repository.js";
 import { embedPendingPostings } from "./embed-postings.js";
 import { runApifyIngestion } from "./apify-ingestor.js";
+import { recordScraperEvent, bumpSourceYield, type ScraperKind } from "./scraper-usage.js";
 
 const BOARD_CONCURRENCY = 10;
 const WORKER_NAME = "global-ingestor";
+
+// Free aggregator API sources (everything else in the free track is a structured ATS
+// board). Used only to tag each free source's ScraperUsageEvent kind for the dashboard.
+const AGGREGATOR_SOURCES = new Set([
+  "remotive", "remoteok", "arbeitnow", "themuse", "adzuna", "usajobs",
+  "jobicy", "weworkremotely", "himalayas", "workingnomads", "hackernews",
+]);
+function freeSourceKind(source: string): ScraperKind {
+  return AGGREGATOR_SOURCES.has(source.toLowerCase()) ? "aggregator" : "ats";
+}
 
 /** Dedupe board refs by `${ats}:${token}` (registry + demand-resolved may overlap). */
 function dedupeBoards(boards: BoardRef[]): BoardRef[] {
@@ -118,21 +129,41 @@ export async function runGlobalIngestion(): Promise<string> {
       },
     });
 
-    // Normalize + upsert into the pool, deduped globally on dedupeKey.
+    // Normalize + upsert into the pool, deduped globally on dedupeKey. Tally
+    // discovered/new/duplicate PER SOURCE so the dashboard can show each free
+    // source's contribution + dedup-waste (the free track spends $0 on fetching).
     let inserted = 0;
     let updated = 0;
     const seen = new Set<string>();
+    type Tally = { discovered: number; isNew: number; dup: number };
+    const bySource = new Map<string, Tally>();
+    const tally = (src: string): Tally => {
+      let t = bySource.get(src);
+      if (!t) { t = { discovered: 0, isNew: 0, dup: 0 }; bySource.set(src, t); }
+      return t;
+    };
     for (const raw of rawJobs) {
       const norm = normalizeJob(raw);
-      if (seen.has(norm.dedupeKey)) continue; // collapse intra-cycle duplicates
+      const t = tally(norm.source);
+      t.discovered++;
+      if (seen.has(norm.dedupeKey)) { t.dup++; continue; } // collapse intra-cycle duplicates
       seen.add(norm.dedupeKey);
       try {
         const res = await upsertPosting(norm);
-        if (res.isNew) inserted++;
-        else updated++;
+        if (res.isNew) { inserted++; t.isNew++; }
+        else { updated++; t.dup++; }
       } catch (err) {
         logger.warn({ runId: run.id, dedupeKey: norm.dedupeKey, err: String(err) }, "Posting upsert failed");
       }
+    }
+
+    // Per-source yield + a per-source ScraperUsageEvent (cost $0, for free sources).
+    for (const [source, t] of bySource) {
+      await bumpSourceYield(source, { scraped: t.discovered, isNew: t.isNew, dup: t.dup });
+      await recordScraperEvent({
+        runId: run.id, kind: freeSourceKind(source), source,
+        itemsReturned: t.discovered, itemsNew: t.isNew, itemsDuplicate: t.dup, status: "ok",
+      });
     }
 
     await prisma.globalIngestRun.update({
@@ -143,7 +174,7 @@ export async function runGlobalIngestion(): Promise<string> {
     // COST LEVER: bound embeddings per cycle (config.ingest.maxEmbeddingsPerRun).
     // Remaining pending postings embed on later cycles. 0 = unlimited.
     const embedCap = config.ingest.maxEmbeddingsPerRun;
-    const embedded = await embedPendingPostings(embedCap > 0 ? embedCap : 1_000_000);
+    const { embedded, costUsd: embedCostUsd } = await embedPendingPostings(embedCap > 0 ? embedCap : 1_000_000);
 
     // Retention: soft-expire postings not re-seen within the retention window so
     // matching surfaces only fresh, still-live jobs (re-seen ones re-activate).
@@ -152,7 +183,15 @@ export async function runGlobalIngestion(): Promise<string> {
 
     await prisma.globalIngestRun.update({
       where: { id: run.id },
-      data: { status: "COMPLETED", postingsEmbedded: embedded, completedAt: new Date() },
+      data: {
+        status: "COMPLETED",
+        postingsEmbedded: embedded,
+        // Free track: fetching costs $0; embedding is the only real cost.
+        costUsd: 0,
+        embedCostUsd,
+        callCount: bySource.size,
+        completedAt: new Date(),
+      },
     });
 
     logger.info(

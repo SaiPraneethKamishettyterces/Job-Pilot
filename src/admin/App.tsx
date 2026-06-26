@@ -8,6 +8,8 @@ import { ExecutiveBillingPage } from "./pages/billing";
 import { AdminSourcesPage } from "./pages/sources";
 import { AdminExpensesPage } from "./pages/expenses";
 import { AdminJobAnalyticsPage } from "./pages/job-analytics";
+import { AdminJobsExplorerPage } from "./pages/jobs-explorer";
+import { AdminStoragePage } from "./pages/storage";
 
 export function AdminApp() {
   return (
@@ -22,6 +24,8 @@ export function AdminApp() {
                 <Route path="/sources" element={<AdminSourcesPage />} />
                 <Route path="/expenses" element={<AdminExpensesPage />} />
                 <Route path="/job-analytics" element={<AdminJobAnalyticsPage />} />
+                <Route path="/jobs" element={<AdminJobsExplorerPage />} />
+                <Route path="/storage" element={<AdminStoragePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AdminShell>

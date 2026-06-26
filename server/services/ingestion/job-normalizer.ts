@@ -42,6 +42,9 @@ export type NormalizedJob = {
   // ATS), which the source-scoped dedupeKey cannot. Heuristic by design.
   canonicalKey: string;
   contentHash: string;
+  // Paid-scraper cost amortized onto this job (0 for free sources). Carried from
+  // RawJob → JobPosting.acquisitionCostUsd for per-job cost tracking.
+  acquisitionCostUsd: number;
 };
 
 // ─── Skill taxonomy ──────────────────────────────────────────────────────────
@@ -330,5 +333,6 @@ export function normalizeJob(raw: RawJob): NormalizedJob {
     dedupeKey,
     canonicalKey,
     contentHash,
+    acquisitionCostUsd: raw.acquisitionCostUsd ?? 0,
   };
 }

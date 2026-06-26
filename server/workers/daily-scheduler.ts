@@ -7,6 +7,7 @@ import { runGlobalIngestion } from "../services/ingestion/global-ingestor.js";
 import { syncRegistry } from "../services/ingestion/registry-sync.js";
 import { purgeStalePostings, purgeStaleJobSeen, purgeStaleUserJobSeen } from "../repositories/job-posting-repository.js";
 import { rebalanceApifyBudgets } from "../services/ingestion/source-budget.js";
+import { snapshotStorage } from "../services/admin/storage-metrics.js";
 import { getRuntimeSettings } from "../services/admin/runtime-settings.js";
 import { triggerFullPipeline } from "./application-pipeline.js";
 import { remainingApplications } from "../services/billing/usage-limits.js";
@@ -26,6 +27,7 @@ let lastDispatchDate: string | null = null;
 let lastIngestDate: string | null = null;
 let lastPurgeDate: string | null = null;
 let lastRebalanceDate: string | null = null;
+let lastStorageDate: string | null = null;
 
 function sched() {
   return config.automation.scheduler;
@@ -97,6 +99,14 @@ export async function maybeRebalanceBudgets(): Promise<void> {
   await rebalanceApifyBudgets().catch((err) => logger.error({ err: String(err) }, "Budget rebalance failed"));
 }
 
+/** Daily storage snapshot for the admin infra/cost tab, once per day. */
+export async function maybeSnapshotStorage(): Promise<void> {
+  const { dateKey } = tzParts((await getRuntimeSettings()).timezone);
+  if (lastStorageDate === dateKey) return;
+  lastStorageDate = dateKey;
+  await snapshotStorage().catch((err) => logger.error({ err: String(err) }, "Storage snapshot failed"));
+}
+
 /**
  * LEGACY daily per-user auto-dispatch — OFF by default (per-user runs are
  * user-initiated). When enabled, starts a "scheduled" run for each eligible active
@@ -154,6 +164,7 @@ export function startDailyScheduler(): void {
     void maybeRunGlobalIngestion()
       .then(() => maybePurgePool())
       .then(() => maybeRebalanceBudgets())
+      .then(() => maybeSnapshotStorage())
       .then(() => dispatchDailyRuns())
       .catch((err) => logger.error({ err: String(err) }, "Daily scheduler tick error"));
   }, intervalMs);

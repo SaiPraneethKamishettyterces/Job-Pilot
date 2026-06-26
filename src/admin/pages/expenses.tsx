@@ -127,8 +127,9 @@ export function AdminExpensesPage() {
         <div>
           <h1 className="text-xl font-semibold">Job-Pulling Expenses</h1>
           <p className="text-sm text-muted-foreground">
-            Apify spend per source, daily budget cap, and cost-per-good-match yield. Free sources
-            (ATS + aggregators) cost nothing — only the paid Apify scrapers spend.
+            Unified cost per source: paid Apify spend <em>plus</em> the embedding cost every posting
+            incurs — so &ldquo;free&rdquo; ATS/aggregator sources show their real (embedding) cost too.
+            Includes dedup-waste, cost-per-new-job, per-run drill, and a month projection.
           </p>
         </div>
         <button
@@ -170,17 +171,21 @@ export function AdminExpensesPage() {
 
           {/* Headline stats */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <Stat label={`Spend (last ${d.windowDays}d)`} value={usd(d.totalCostUsd)} />
+            <Stat
+              label={`Unified spend (${d.windowDays}d)`}
+              value={usd(d.unifiedTotalUsd)}
+              sub={`${usd(d.totalCostUsd)} Apify + ${usd(d.totalEmbedCostUsd)} embed`}
+            />
+            <Stat
+              label="Month to date"
+              value={usd(d.projection.monthToDateUsd)}
+              sub={`projected ${usd(d.projection.projectedMonthUsd)} / mo`}
+            />
             <Stat label="Active pool" value={String(d.pool.activePostings)} sub="postings" />
             <Stat
               label="Last global run"
               value={d.pool.lastGlobalRunAt ? new Date(d.pool.lastGlobalRunAt).toLocaleDateString() : "—"}
               sub={d.pool.lastGlobalRunStatus ?? undefined}
-            />
-            <Stat
-              label="Global run mode"
-              value={d.globalRun.mode}
-              sub={d.globalRun.mode === "auto" ? `${d.globalRun.runHour}:00 ${d.globalRun.timezone}` : "manual trigger"}
             />
           </div>
 
@@ -212,31 +217,78 @@ export function AdminExpensesPage() {
           <SettingsCard />
 
           {/* Per-source breakdown */}
-          <section className="rounded-lg border">
+          <section className="rounded-lg border overflow-x-auto">
             <header className="border-b px-4 py-3 text-sm font-medium">Cost by source ({d.windowDays}d)</header>
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="py-2 px-4 font-medium">Source</th>
-                  <th className="py-2 px-4 font-medium">Spend</th>
+                  <th className="py-2 px-4 font-medium">Apify $</th>
+                  <th className="py-2 px-4 font-medium">Embed $</th>
+                  <th className="py-2 px-4 font-medium">Total $</th>
                   <th className="py-2 px-4 font-medium">Scraped</th>
-                  <th className="py-2 px-4 font-medium">Runs</th>
-                  <th className="py-2 px-4 font-medium">Good matches (80+)</th>
-                  <th className="py-2 px-4 font-medium">Cost / good match</th>
+                  <th className="py-2 px-4 font-medium">New</th>
+                  <th className="py-2 px-4 font-medium">Dedup</th>
+                  <th className="py-2 px-4 font-medium">Cost / new</th>
+                  <th className="py-2 px-4 font-medium">80+ matches</th>
+                  <th className="py-2 px-4 font-medium">Cost / match</th>
                 </tr>
               </thead>
               <tbody>
                 {d.sources.length === 0 ? (
-                  <tr><td colSpan={6} className="py-4 px-4 text-muted-foreground">No source spend yet.</td></tr>
+                  <tr><td colSpan={10} className="py-4 px-4 text-muted-foreground">No source activity yet.</td></tr>
                 ) : (
                   d.sources.map((s) => (
                     <tr key={s.source} className="border-b last:border-0">
                       <td className="py-2 px-4 font-medium">{SOURCE_LABELS[s.source] ?? s.source}</td>
                       <td className="py-2 px-4">{usd(s.costUsd)}</td>
+                      <td className="py-2 px-4">{usd(s.embedCostUsd)}</td>
+                      <td className="py-2 px-4 font-medium">{usd(s.totalCostUsd)}</td>
                       <td className="py-2 px-4">{s.totalScraped}</td>
-                      <td className="py-2 px-4">{s.actorRuns}</td>
+                      <td className="py-2 px-4">{s.totalNew}</td>
+                      <td className="py-2 px-4">{s.dedupRatio != null ? `${Math.round(s.dedupRatio * 100)}%` : "—"}</td>
+                      <td className="py-2 px-4">{s.costPerNewJob != null ? usd(s.costPerNewJob) : "—"}</td>
                       <td className="py-2 px-4">{s.jobsHighMatch}</td>
                       <td className="py-2 px-4">{s.costPerHighMatchJob != null ? usd(s.costPerHighMatchJob) : "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </section>
+
+          {/* Per-run drill-down */}
+          <section className="rounded-lg border overflow-x-auto">
+            <header className="border-b px-4 py-3 text-sm font-medium">Recent runs</header>
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 px-4 font-medium">When</th>
+                  <th className="py-2 px-4 font-medium">Track</th>
+                  <th className="py-2 px-4 font-medium">Status</th>
+                  <th className="py-2 px-4 font-medium">Apify $</th>
+                  <th className="py-2 px-4 font-medium">Embed $</th>
+                  <th className="py-2 px-4 font-medium">Calls</th>
+                  <th className="py-2 px-4 font-medium">Discovered</th>
+                  <th className="py-2 px-4 font-medium">New</th>
+                  <th className="py-2 px-4 font-medium">Embedded</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.runs.length === 0 ? (
+                  <tr><td colSpan={9} className="py-4 px-4 text-muted-foreground">No runs yet.</td></tr>
+                ) : (
+                  d.runs.map((r) => (
+                    <tr key={r.id} className="border-b last:border-0">
+                      <td className="py-2 px-4">{r.startedAt ? new Date(r.startedAt).toLocaleString() : "—"}</td>
+                      <td className="py-2 px-4">{r.sourceTag === "apify" ? "Apify (paid)" : "Free"}</td>
+                      <td className="py-2 px-4">{r.status}</td>
+                      <td className="py-2 px-4">{usd(r.costUsd)}</td>
+                      <td className="py-2 px-4">{usd(r.embedCostUsd)}</td>
+                      <td className="py-2 px-4">{r.callCount}</td>
+                      <td className="py-2 px-4">{r.postingsDiscovered}</td>
+                      <td className="py-2 px-4">{r.postingsInserted}</td>
+                      <td className="py-2 px-4">{r.postingsEmbedded}</td>
                     </tr>
                   ))
                 )}

@@ -3,16 +3,20 @@ import { config } from "../../../lib/config.js";
 import { stripHtml, type RawJob } from "../ats-sources.js";
 import { runActor, perQueryBudget, str } from "./apify.js";
 
-export async function scrapeIndeed(keywords: string[], maxItems: number): Promise<RawJob[]> {
+export async function scrapeIndeed(
+  keywords: string[],
+  maxItems: number,
+  ctx: { runId?: string | null } = {},
+): Promise<RawJob[]> {
   const queries = keywords.length ? keywords : ["software engineer"];
   const perSearch = perQueryBudget(maxItems, queries.length);
   const out: RawJob[] = [];
   for (const position of queries) {
-    const items = await runActor(
+    const { items, unitCostUsd } = await runActor(
       config.apify.actors.indeed,
       { position, location: "United States", country: "US", maxItemsPerSearch: perSearch },
       perSearch,
-      "indeed",
+      { sourceKey: "indeed", runId: ctx.runId, query: position },
     );
     for (const j of items) {
       out.push({
@@ -30,6 +34,7 @@ export async function scrapeIndeed(keywords: string[], maxItems: number): Promis
         workplaceType: null,
         commitment: str(j, "employmentType", "jobType"),
         raw: j,
+        acquisitionCostUsd: unitCostUsd,
       });
     }
   }

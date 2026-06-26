@@ -321,6 +321,14 @@ model JobPosting {
   embeddedAt        DateTime?
   embedModel        String?
 
+  // Per-job cost attribution (admin cost tracking). acquisitionCostUsd = the paid
+  // scraper spend amortized onto this posting at first insert (callCost / itemsReturned;
+  // 0 for free ATS/aggregator sources). embedCostUsd = the embedding spend for this row.
+  // totalCost = acquisition + embed; summed by source for the unified per-source view.
+  // Null on legacy rows ingested before cost tracking existed.
+  acquisitionCostUsd Float?
+  embedCostUsd       Float?
+
   // GLOBAL dedup identity: `${source}:${company}:${sourceJobId}` (lowercased),
   // computed by normalizeJob. Upserted on by the ingestor (one row per posting).
   dedupeKey         String   @unique
@@ -343,6 +351,8 @@ model JobPosting {
   @@index([company])
   @@index([postingStatus, postedAt])
   @@index([remoteType])
+  @@index([sourceName])   // admin job-pool explorer: filter/group by source
+  @@index([firstSeenAt])  // admin explorer ordering + freshness trend
 }
 
 // Pool-level ingestion metrics for the scheduled global ingestor (the analog of
@@ -357,11 +367,66 @@ model GlobalIngestRun {
   postingsInserted   Int       @default(0)
   postingsUpdated    Int       @default(0)
   postingsEmbedded   Int       @default(0)
+  // Per-run cost (admin cost tracking). costUsd = scraper spend this run (Apify;
+  // 0 for the free track), embedCostUsd = embedding spend this run, callCount =
+  // number of scraper calls/sources recorded (see ScraperUsageEvent).
+  costUsd            Float     @default(0)
+  embedCostUsd       Float     @default(0)
+  callCount          Int       @default(0)
   errorMessage       String?
   startedAt          DateTime?
   completedAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+
+  scraperEvents      ScraperUsageEvent[]
+}
+
+// Per-CALL scraper ledger (the analog of AIUsageEvent, for job pulling). One row
+// per actor invocation (Apify: per keyword/query) or per free source per run.
+// Powers per-keyword cost drill-down, source reliability (status/latency), and the
+// dedup-waste metric (itemsNew vs itemsReturned). costUsd is 0 for free sources.
+model ScraperUsageEvent {
+  id             String           @id @default(cuid())
+  runId          String?
+  run            GlobalIngestRun? @relation(fields: [runId], references: [id])
+  kind           String           // apify | ats | aggregator
+  source         String           // linkedin | indeed | hiringcafe | greenhouse | remotive | ...
+  actorName      String?          // Apify actor slug when kind=apify
+  query          String?          // the keyword/search term that drove the call (Apify)
+  itemsReturned  Int              @default(0)
+  itemsNew       Int              @default(0)
+  itemsDuplicate Int              @default(0)
+  costUsd        Float            @default(0)
+  estimated      Boolean          @default(false) // true = fallback per-result rate (actor reported no usage)
+  durationMs     Int              @default(0)
+  status         String           @default("ok")  // ok | error | capped
+  errorMessage   String?
+  createdAt      DateTime         @default(now())
+
+  @@index([source, createdAt])
+  @@index([runId])
+  @@index([createdAt])
+}
+
+// Daily storage snapshot (admin infra cost tracking + cloud-migration budgeting).
+// Written once/day by snapshotStorage(). `scope` selects the breakdown dimension
+// and `key` the bucket within it. Bytes are exact Postgres on-disk sizes. Enables
+// growth-rate, runway, and projected $/GB-month cloud cost (DB vs blob).
+model StorageDailyMetric {
+  id         String   @id @default(cuid())
+  date       DateTime @db.Date
+  scope      String   // database | table | source | artifactType | user
+  key        String   // table name | source name | artifact type | userId | "_" (database)
+  bytesTotal BigInt   @default(0)
+  bytesHeap  BigInt   @default(0)
+  bytesIndex BigInt   @default(0)
+  bytesToast BigInt   @default(0)
+  rowCount   BigInt   @default(0)
+  createdAt  DateTime @default(now())
+
+  @@unique([date, scope, key])
+  @@index([scope, date])
 }
 
 // Admin-editable runtime settings (spec Pt 18). Key→JSON value overlay on top of

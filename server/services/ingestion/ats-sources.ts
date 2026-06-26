@@ -36,6 +36,10 @@ export type RawJob = {
   workplaceType: string | null; // remote | hybrid | onsite | null
   commitment: string | null; // full-time | contract | internship | null
   raw: unknown;
+  // Paid-scraper cost amortized onto this job (callCost / itemsReturned). Set by the
+  // Apify scrapers; absent/0 for free ATS + aggregator sources. Carried to the
+  // posting's acquisitionCostUsd at upsert for per-job cost tracking.
+  acquisitionCostUsd?: number;
 };
 
 const FETCH_TIMEOUT_MS = 12000;

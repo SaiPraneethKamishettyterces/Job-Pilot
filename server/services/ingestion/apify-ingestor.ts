@@ -15,8 +15,9 @@ import { scrapeLinkedIn } from "./scrapers/linkedin.js";
 import { scrapeIndeed } from "./scrapers/indeed.js";
 import { scrapeHiringCafe } from "./scrapers/hiringcafe.js";
 import { scrapeJobright } from "./scrapers/jobright.js";
+import { bumpSourceYield } from "./scraper-usage.js";
 
-type Scraper = (keywords: string[], maxItems: number) => Promise<RawJob[]>;
+type Scraper = (keywords: string[], maxItems: number, ctx?: { runId?: string | null }) => Promise<RawJob[]>;
 
 const SCRAPERS: Record<string, Scraper> = {
   linkedin: scrapeLinkedIn,
@@ -50,21 +51,27 @@ export async function runApifyIngestion(demand: DemandProfile): Promise<string |
     for (const cfg of enabled) {
       const scraper = SCRAPERS[cfg.sourceKey];
       if (!scraper) continue;
-      const jobs = await scraper(keywords, cfg.maxJobsPerRun);
+      // Pass runId so each actor call records a ScraperUsageEvent + spend tied to this run.
+      const jobs = await scraper(keywords, cfg.maxJobsPerRun, { runId: run.id });
       discovered += jobs.length;
       logger.info({ source: cfg.sourceKey, count: jobs.length, cap: cfg.maxJobsPerRun }, "Apify source scraped");
+      // Per-source new/duplicate tally → the dedup-waste metric (cost per NEW job).
+      let srcNew = 0;
+      let srcDup = 0;
       for (const raw of jobs) {
         const norm = normalizeJob(raw);
-        if (seen.has(norm.dedupeKey)) continue;
+        if (seen.has(norm.dedupeKey)) { srcDup++; continue; }
         seen.add(norm.dedupeKey);
         try {
           const res = await upsertPosting(norm);
-          if (res.isNew) inserted++;
-          else updated++;
+          if (res.isNew) { inserted++; srcNew++; }
+          else { updated++; srcDup++; }
         } catch (err) {
           logger.warn({ dedupeKey: norm.dedupeKey, err: String(err) }, "Apify posting upsert failed");
         }
       }
+      // Cost + scraped were recorded per-call by recordApifySpend; add only new/dup here.
+      await bumpSourceYield(cfg.sourceKey, { isNew: srcNew, dup: srcDup });
     }
 
     await prisma.globalIngestRun.update({
@@ -79,11 +86,26 @@ export async function runApifyIngestion(demand: DemandProfile): Promise<string |
       },
     });
 
-    const embedded = await embedPendingPostings();
+    const { embedded, costUsd: embedCostUsd } = await embedPendingPostings();
+
+    // Roll the per-call Apify spend recorded against this run into the run row, so
+    // the expenses page can show cost per run without re-aggregating events.
+    const spend = await prisma.scraperUsageEvent.aggregate({
+      where: { runId: run.id },
+      _sum: { costUsd: true },
+      _count: { _all: true },
+    });
 
     await prisma.globalIngestRun.update({
       where: { id: run.id },
-      data: { status: "COMPLETED", postingsEmbedded: embedded, completedAt: new Date() },
+      data: {
+        status: "COMPLETED",
+        postingsEmbedded: embedded,
+        costUsd: spend._sum.costUsd ?? 0,
+        embedCostUsd,
+        callCount: spend._count._all,
+        completedAt: new Date(),
+      },
     });
     logger.info({ runId: run.id, discovered, inserted, updated, embedded }, "Apify ingestion completed");
     return run.id;

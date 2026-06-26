@@ -4,6 +4,10 @@
 import type { RawJob } from "../ats-sources.js";
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function scrapeJobright(_keywords: string[], _maxItems: number): Promise<RawJob[]> {
+export async function scrapeJobright(
+  _keywords: string[],
+  _maxItems: number,
+  _ctx?: { runId?: string | null },
+): Promise<RawJob[]> {
   return [];
 }
