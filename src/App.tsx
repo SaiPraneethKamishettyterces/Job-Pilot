@@ -21,7 +21,6 @@ const named = <T extends string>(loader: () => Promise<Record<T, React.Component
 const OnboardingPage = named(() => import("./pages/onboarding/onboarding"), "OnboardingPage");
 const DashboardPage = named(() => import("./pages/dashboard/dashboard"), "DashboardPage");
 const AppliedPage = named(() => import("./pages/applied/applied"), "AppliedPage");
-const RunsPage = named(() => import("./pages/runs/runs"), "RunsPage");
 const ResumesPage = named(() => import("./pages/resume/resumes"), "ResumesPage");
 const ResumeEditorPage = named(() => import("./pages/resume/resume-editor"), "ResumeEditorPage");
 const ReviewPage = named(() => import("./pages/review/review"), "ReviewPage");
@@ -72,7 +71,7 @@ export default function App() {
                 <Route path="/applications" element={<Navigate to="/applied" replace />} />
                 <Route path="/apply-link" element={<ApplyLinkPage />} />
                 {/* Runs + Review still run in the background; reachable, just off the nav. */}
-                <Route path="/runs" element={<RunsPage />} />
+                <Route path="/runs" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/resume" element={<ResumesPage />} />
                 <Route path="/resume/:id" element={<ResumeEditorPage />} />
                 <Route path="/review" element={<ReviewPage />} />

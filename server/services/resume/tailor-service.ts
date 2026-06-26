@@ -37,6 +37,44 @@ const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/;
 const PHONE_RE = /(\+?\d[\d\s().-]{7,}\d)/;
 const URL_RE = /(https?:\/\/[^\s|]+|(?:www\.|linkedin\.com|github\.com)[^\s|]+)/g;
 
+// Per-call token breakdown. We can't get per-component counts from the API (it only
+// returns totals), so we size each component by its actual character length and
+// apportion the BILLED totals across them — real per-call data, reconciled to the
+// measured tokens. ~4 chars/token is the standard rough ratio (cancels in apportioning).
+function approxTok(s: unknown): number {
+  const str = typeof s === "string" ? s : s == null ? "" : JSON.stringify(s);
+  return Math.max(0, Math.ceil(str.length / 4));
+}
+function apportion(raw: Record<string, number>, total: number): Record<string, number> {
+  const sum = Object.values(raw).reduce((a, b) => a + b, 0) || 1;
+  const f = total / sum;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw)) out[k] = Math.round(v * f);
+  return out;
+}
+function buildUsageBreakdown(
+  opts: { baseResumeText: string; jobDescription: string; userInstructions?: string | null },
+  system: string,
+  data: { resume?: unknown; analysis?: unknown } | null,
+  usage: { inputTokens: number; outputTokens: number },
+) {
+  const r = (data?.resume ?? {}) as Record<string, unknown>;
+  const inputRaw = {
+    "ATS skill prompt": approxTok(system),
+    "Base resume": approxTok(opts.baseResumeText),
+    "Job description": approxTok(opts.jobDescription),
+    "Your instructions": approxTok(opts.userInstructions),
+  };
+  const outputRaw = {
+    "Summary": approxTok(r["professional_summary"]),
+    "Technical skills": approxTok(r["technical_skills"]),
+    "Experience": approxTok(r["experience"]),
+    "Education": approxTok(r["education"]),
+    "ATS analysis": approxTok(data?.analysis),
+  };
+  return { input: apportion(inputRaw, usage.inputTokens), output: apportion(outputRaw, usage.outputTokens) };
+}
+
 export interface TailorOptions {
   baseResumeText: string;
   jobDescription: string;
@@ -148,6 +186,7 @@ async function produceContent(
           applicationId: opts.applicationId ?? null,
           featureName: "resume_tailoring",
           usage,
+          breakdown: buildUsageBreakdown(opts, system, data, usage),
         });
         if (data && typeof data.resume === "object" && data.resume !== null) {
           return { resume: data.resume, analysis: data.analysis ?? {}, usedAi: true, model: m.model };

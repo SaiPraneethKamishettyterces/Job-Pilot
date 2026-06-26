@@ -7,10 +7,19 @@ export const jobRepository = {
 
   createMatch: (data: Prisma.JobMatchUncheckedCreateInput) => prisma.jobMatch.create({ data }),
 
-  /** Scored matches for a user, newest/highest first, with the joined job. */
+  /**
+   * Scored matches for a user, newest/highest first, with the joined job.
+   * Excludes jobs the user has already APPLIED to — those have "moved" to Applied,
+   * so they should no longer surface in Jobs Found. (Pipeline-prepared apps that
+   * were never user-confirmed stay, so the user can still choose to apply.)
+   */
   findMatches: (userId: string, decision?: string) =>
     prisma.jobMatch.findMany({
-      where: { userId, ...(decision ? { decision } : {}) },
+      where: {
+        userId,
+        ...(decision ? { decision } : {}),
+        job: { applications: { none: { userId, status: "APPLIED" } } },
+      },
       include: { job: true },
       orderBy: { score: "desc" },
     }),

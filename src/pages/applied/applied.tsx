@@ -87,6 +87,7 @@ function AppliedCard({
         {/* Row 2 — meta */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <span>Applied {formatRelativeDate(appliedAt)}</span>
+          {app.postedAt && (<><span>·</span><span>Posted {formatRelativeDate(app.postedAt)}</span></>)}
           {app.atsPlatform && (<><span>·</span><span className="capitalize">{app.atsPlatform}</span></>)}
           {app.matchScore != null && (<><span>·</span><span>{app.matchScore}% match</span></>)}
           {app.jobUrl && (
@@ -184,6 +185,9 @@ export function AppliedPage() {
   const apps = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = (appsData?.applications ?? []).filter((a) => {
+      // A job belongs on Applied ONLY after the user confirmed they applied
+      // (mark-applied sets appliedAt). Pipeline-prepared apps have appliedAt = null.
+      if (!a.appliedAt) return false;
       if (statusFilter !== "ALL" && a.status !== statusFilter) return false;
       if (q && !`${a.company} ${a.roleTitle}`.toLowerCase().includes(q)) return false;
       return true;
@@ -224,11 +228,10 @@ export function AppliedPage() {
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="All statuses" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">All statuses</SelectItem>
+            <SelectItem value="ALL">All applied</SelectItem>
             <SelectItem value="APPLIED">Applied</SelectItem>
-            <SelectItem value="APPROVED">Approved</SelectItem>
-            <SelectItem value="ASSISTED_REQUIRED">Assisted</SelectItem>
-            <SelectItem value="DECLINED">Declined</SelectItem>
+            <SelectItem value="FOLLOW_UP_DUE">Follow-up due</SelectItem>
+            <SelectItem value="ARCHIVED">Archived</SelectItem>
           </SelectContent>
         </Select>
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>

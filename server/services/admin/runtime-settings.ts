@@ -15,6 +15,8 @@ export type RuntimeSettings = {
   timezone: string;
   weekendIngest: boolean;
   purgeWeekday: number; // 0=Sun … 6=Sat
+  claudeMonthlyBudgetUsd: number; // Claude API monthly spend budget (cost dashboard)
+  claudeCostPerResumeWarnUsd: number; // amber threshold for cost/resume
 };
 
 // key → { parse, validate } for each editable setting.
@@ -31,6 +33,8 @@ function defaults(): RuntimeSettings {
     timezone: s.timezone,
     weekendIngest: s.weekendIngest,
     purgeWeekday: s.purgeWeekday,
+    claudeMonthlyBudgetUsd: 50,
+    claudeCostPerResumeWarnUsd: 0.12,
   };
 }
 
@@ -67,6 +71,8 @@ const VALIDATORS: Record<Key, (v: unknown) => unknown> = {
   timezone: (v) => (typeof v === "string" && v.trim() ? v.trim() : "UTC"),
   weekendIngest: (v) => Boolean(v),
   purgeWeekday: (v) => Math.round(clampNum(v, 0, 6)),
+  claudeMonthlyBudgetUsd: (v) => clampNum(v, 0, 100000),
+  claudeCostPerResumeWarnUsd: (v) => clampNum(v, 0, 100),
 };
 
 function clampNum(v: unknown, min: number, max: number): number {

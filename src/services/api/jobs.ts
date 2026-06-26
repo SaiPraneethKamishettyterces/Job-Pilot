@@ -57,6 +57,22 @@ export async function removeJob(jobId: string): Promise<void> {
   await api.delete(`/api/jobs/${jobId}`);
 }
 
+// Start a manual application for an existing matched job (dedups; links to the real job).
+export async function applyToJob(jobId: string): Promise<{ applicationId: string; status: string }> {
+  const { data } = await api.post<{ applicationId: string; status: string }>(`/api/jobs/${jobId}/apply`);
+  return data;
+}
+
+// Read-only: existing application + generated docs for a job (to reuse, not re-generate).
+export async function getJobApplication(jobId: string): Promise<{
+  applicationId: string | null;
+  status: string | null;
+  documents: import("./applications").ApplicationDocument[];
+}> {
+  const { data } = await api.get(`/api/jobs/${jobId}/application`);
+  return data;
+}
+
 // ─── Job Candidates (T2) ─────────────────────────────────────────────────────
 
 export type JobCandidate = {
