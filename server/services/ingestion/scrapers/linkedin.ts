@@ -17,6 +17,8 @@ export type LinkedInOpts = {
   /** LinkedIn experienceLevel code "1".."5"; omit for no filter. */
   experienceLevel?: string;
   location?: string;
+  /** GlobalIngestRun this scrape belongs to (per-call cost ledger). */
+  runId?: string | null;
 };
 
 // Map our candidate seniority band → LinkedIn experienceLevel code (best-effort).
@@ -47,7 +49,11 @@ export async function scrapeLinkedIn(
   for (const title of queries) {
     const input: Record<string, unknown> = { title, location, rows, publishedAt };
     if (opts.experienceLevel) input["experienceLevel"] = opts.experienceLevel;
-    const items = await runActor(config.apify.actors.linkedin, input, rows, "linkedin");
+    const { items, unitCostUsd } = await runActor(config.apify.actors.linkedin, input, rows, {
+      sourceKey: "linkedin",
+      runId: opts.runId,
+      query: title,
+    });
     for (const j of items) {
       const desc = str(j, "jobDescription", "description") ?? "";
       out.push({
@@ -65,6 +71,7 @@ export async function scrapeLinkedIn(
         workplaceType: str(j, "workType"),
         commitment: str(j, "contractType", "employmentType"),
         raw: j,
+        acquisitionCostUsd: unitCostUsd,
       });
     }
   }

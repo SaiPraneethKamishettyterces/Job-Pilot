@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import { requireAuth, type AuthRequest } from "../lib/auth-middleware.js";
 import { requireAdmin } from "../middleware/require-admin.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -8,8 +9,11 @@ import { prisma } from "../lib/db.js";
 import { config } from "../lib/config.js";
 import { triggerGlobalIngestion } from "../services/ingestion/global-ingestor.js";
 import { apifyBudgetStatus } from "../services/ingestion/apify-budget.js";
+import { snapshotStorage } from "../services/admin/storage-metrics.js";
 import { getRuntimeSettings, setRuntimeSettings } from "../services/admin/runtime-settings.js";
 import { PRICE_PER_MTOK, FALLBACK_PRICE } from "../services/ai/model-config.js";
+
+const GB = 1_000_000_000;
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -218,7 +222,12 @@ adminRouter.get("/expenses", asyncHandler(async (req: AuthRequest, res) => {
   since.setUTCDate(since.getUTCDate() - days);
   const sinceDay = new Date(Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()));
 
-  const [budget, metrics, lastRun, poolSize, hmRows] = await Promise.all([
+  const now = new Date();
+  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const dayOfMonth = now.getUTCDate();
+  const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+
+  const [budget, metrics, lastRun, poolSize, hmRows, embedRows, recentRuns, mtdEmbed] = await Promise.all([
     apifyBudgetStatus(),
     prisma.sourceDailyMetrics.findMany({ where: { date: { gte: sinceDay } }, orderBy: { date: "asc" } }),
     prisma.globalIngestRun.findFirst({ orderBy: { createdAt: "desc" } }),
@@ -230,27 +239,66 @@ adminRouter.get("/expenses", asyncHandler(async (req: AuthRequest, res) => {
       JOIN "JobPosting" jp ON jp.id = j."postingId"
       WHERE m.score >= 80 AND m."createdAt" >= ${sinceDay}
       GROUP BY jp."sourceName"`,
+    // Embedding cost attributed per source (jobs first seen in the window). This is
+    // the "free isn't free" line — free sources pay $0 to fetch but cost to embed.
+    prisma.$queryRaw<{ source: string | null; embed: number }[]>`
+      SELECT "sourceName" AS source, COALESCE(SUM("embedCostUsd"), 0)::float8 AS embed
+      FROM "JobPosting" WHERE "firstSeenAt" >= ${sinceDay} GROUP BY "sourceName"`,
+    // Per-run drill-down (most recent runs with their cost).
+    prisma.globalIngestRun.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
+    // Month-to-date embedding spend (apify MTD is summed from metrics below).
+    prisma.globalIngestRun.aggregate({ where: { createdAt: { gte: startOfMonth } }, _sum: { embedCostUsd: true } }),
   ]);
 
-  // Per-source roll-up across the window.
-  const bySource = new Map<string, { costUsd: number; scraped: number; runs: number }>();
+  // Per-source roll-up across the window (apify spend + counts + embedding cost).
+  type Agg = { costUsd: number; scraped: number; runs: number; newJobs: number; dups: number };
+  const bySource = new Map<string, Agg>();
   for (const m of metrics) {
-    const cur = bySource.get(m.source) ?? { costUsd: 0, scraped: 0, runs: 0 };
+    const cur = bySource.get(m.source) ?? { costUsd: 0, scraped: 0, runs: 0, newJobs: 0, dups: 0 };
     cur.costUsd += m.costUsd;
     cur.scraped += m.totalScraped;
     cur.runs += m.actorRuns;
+    cur.newJobs += m.totalNew;
+    cur.dups += m.totalDuplicates;
     bySource.set(m.source, cur);
   }
+  const embedBySource = new Map(embedRows.map((r) => [r.source ?? "", Number(r.embed)]));
+  for (const s of embedBySource.keys()) if (!bySource.has(s)) bySource.set(s, { costUsd: 0, scraped: 0, runs: 0, newJobs: 0, dups: 0 });
   const highMatch = new Map(hmRows.map((r) => [r.source ?? "", Number(r.count)]));
-  const sources = [...bySource.entries()].map(([source, v]) => ({
-    source,
-    costUsd: Number(v.costUsd.toFixed(4)),
-    totalScraped: v.scraped,
-    actorRuns: v.runs,
-    jobsHighMatch: highMatch.get(source) ?? 0,
-    costPerHighMatchJob: (highMatch.get(source) ?? 0) > 0 ? Number((v.costUsd / highMatch.get(source)!).toFixed(4)) : null,
-  }));
+
+  const sources = [...bySource.entries()]
+    .map(([source, v]) => {
+      const embedUsd = Number((embedBySource.get(source) ?? 0).toFixed(4));
+      const hm = highMatch.get(source) ?? 0;
+      const totalCost = Number((v.costUsd + embedUsd).toFixed(4));
+      return {
+        source,
+        costUsd: Number(v.costUsd.toFixed(4)), // paid scraper spend (Apify)
+        embedCostUsd: embedUsd,
+        totalCostUsd: totalCost, // unified: acquisition + embedding
+        totalScraped: v.scraped,
+        totalNew: v.newJobs,
+        totalDuplicates: v.dups,
+        dedupRatio: v.scraped > 0 ? Number((v.dups / v.scraped).toFixed(2)) : null,
+        actorRuns: v.runs,
+        jobsHighMatch: hm,
+        costPerHighMatchJob: hm > 0 ? Number((totalCost / hm).toFixed(4)) : null,
+        costPerNewJob: v.newJobs > 0 && v.costUsd > 0 ? Number((v.costUsd / v.newJobs).toFixed(4)) : null,
+      };
+    })
+    .sort((a, b) => b.totalCostUsd - a.totalCostUsd || b.totalScraped - a.totalScraped);
+
   const totalCostUsd = Number(sources.reduce((s, x) => s + x.costUsd, 0).toFixed(4));
+  const totalEmbedCostUsd = Number(sources.reduce((s, x) => s + x.embedCostUsd, 0).toFixed(4));
+  const unifiedTotalUsd = Number((totalCostUsd + totalEmbedCostUsd).toFixed(4));
+
+  // Month-to-date + linear run-rate projection (apify spend; embed is tiny/free-tier).
+  const apifyMtd = metrics
+    .filter((m) => m.date >= startOfMonth && ["linkedin", "indeed", "hiringcafe"].includes(m.source))
+    .reduce((s, m) => s + m.costUsd, 0);
+  const embedMtd = Number(mtdEmbed._sum.embedCostUsd ?? 0);
+  const mtdUsd = Number((apifyMtd + embedMtd).toFixed(4));
+  const projectedMonthUsd = dayOfMonth > 0 ? Number(((mtdUsd / dayOfMonth) * daysInMonth).toFixed(2)) : 0;
 
   // Daily cost trend (for the chart): { date, costUsd } summed across sources.
   const trendMap = new Map<string, number>();
@@ -264,8 +312,24 @@ adminRouter.get("/expenses", asyncHandler(async (req: AuthRequest, res) => {
     budget, // { spentUsd, softUsd, hardUsd, softExceeded, hardExceeded, remainingUsd }
     windowDays: days,
     totalCostUsd,
+    totalEmbedCostUsd,
+    unifiedTotalUsd,
+    projection: { monthToDateUsd: mtdUsd, projectedMonthUsd },
     sources,
     trend,
+    runs: recentRuns.map((r) => ({
+      id: r.id,
+      sourceTag: r.sourceTag,
+      status: r.status,
+      costUsd: Number((r.costUsd ?? 0).toFixed(4)),
+      embedCostUsd: Number((r.embedCostUsd ?? 0).toFixed(4)),
+      callCount: r.callCount,
+      postingsDiscovered: r.postingsDiscovered,
+      postingsInserted: r.postingsInserted,
+      postingsEmbedded: r.postingsEmbedded,
+      startedAt: r.startedAt?.toISOString() ?? null,
+      completedAt: r.completedAt?.toISOString() ?? null,
+    })),
     pool: {
       activePostings: poolSize,
       lastGlobalRunAt: lastRun?.completedAt?.toISOString() ?? lastRun?.startedAt?.toISOString() ?? null,
@@ -685,4 +749,250 @@ adminRouter.post("/claude-usage/reconcile", asyncHandler(async (req: AuthRequest
   });
   logger.info({ actualBilledUsd: payload.actualBilledUsd, keys: payload.byKey.length }, "claude usage reconciled from CSV");
   res.json(payload);
+}));
+
+// ─── GET /api/admin/scraper-runs ──────────────────────────────────────────────
+// Per-CALL scraper drill-down from ScraperUsageEvent: recent calls, per-keyword
+// cost rollup (Apify), and per-source reliability (error rate + avg latency).
+adminRouter.get("/scraper-runs", asyncHandler(async (req: AuthRequest, res) => {
+  const days = Math.min(90, Math.max(1, Number(req.query["days"]) || 7));
+  const source = typeof req.query["source"] === "string" ? (req.query["source"] as string) : undefined;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const where = { createdAt: { gte: since }, ...(source ? { source } : {}) };
+
+  const [events, byKeyword, reliability] = await Promise.all([
+    prisma.scraperUsageEvent.findMany({ where, orderBy: { createdAt: "desc" }, take: 200 }),
+    // Per-keyword cost (Apify calls carry a query); the highest-cost search terms.
+    prisma.$queryRaw<{ source: string; query: string | null; calls: number; cost: number; items: number }[]>`
+      SELECT "source", "query",
+        COUNT(*)::int AS calls,
+        COALESCE(SUM("costUsd"), 0)::float8 AS cost,
+        COALESCE(SUM("itemsReturned"), 0)::int AS items
+      FROM "ScraperUsageEvent"
+      WHERE "createdAt" >= ${since} AND "kind" = 'apify' AND "query" IS NOT NULL
+      GROUP BY "source", "query" ORDER BY cost DESC LIMIT 50`,
+    // Source reliability: error rate + average latency + items per call.
+    prisma.$queryRaw<{ source: string; calls: number; errors: number; capped: number; avgms: number; items: number }[]>`
+      SELECT "source",
+        COUNT(*)::int AS calls,
+        COUNT(*) FILTER (WHERE "status" = 'error')::int AS errors,
+        COUNT(*) FILTER (WHERE "status" = 'capped')::int AS capped,
+        COALESCE(AVG("durationMs"), 0)::float8 AS avgms,
+        COALESCE(SUM("itemsReturned"), 0)::int AS items
+      FROM "ScraperUsageEvent" WHERE "createdAt" >= ${since}
+      GROUP BY "source" ORDER BY calls DESC`,
+  ]);
+
+  res.json({
+    windowDays: days,
+    events: events.map((e) => ({
+      id: e.id, runId: e.runId, kind: e.kind, source: e.source, actorName: e.actorName, query: e.query,
+      itemsReturned: e.itemsReturned, itemsNew: e.itemsNew, itemsDuplicate: e.itemsDuplicate,
+      costUsd: Number(e.costUsd.toFixed(4)), estimated: e.estimated, durationMs: e.durationMs,
+      status: e.status, createdAt: e.createdAt.toISOString(),
+    })),
+    byKeyword: byKeyword.map((k) => ({
+      source: k.source, query: k.query, calls: Number(k.calls),
+      costUsd: Number(Number(k.cost).toFixed(4)), items: Number(k.items),
+      costPerItem: Number(k.items) > 0 ? Number((Number(k.cost) / Number(k.items)).toFixed(4)) : null,
+    })),
+    reliability: reliability.map((r) => ({
+      source: r.source, calls: Number(r.calls), errors: Number(r.errors), capped: Number(r.capped),
+      errorRate: Number(r.calls) > 0 ? Number((Number(r.errors) / Number(r.calls)).toFixed(2)) : 0,
+      avgDurationMs: Math.round(Number(r.avgms)), items: Number(r.items),
+    })),
+  });
+}));
+
+// ─── GET /api/admin/storage ───────────────────────────────────────────────────
+// Storage/infra breakdown from the daily StorageDailyMetric snapshots: DB + per-table
+// + per-source + artifact-blob bytes, growth rate, and projected GCP cost (Cloud SQL
+// for the DB, GCS for the blobs) once the single-Postgres app migrates to cloud.
+adminRouter.get("/storage", asyncHandler(async (req: AuthRequest, res) => {
+  const days = Math.min(180, Math.max(2, Number(req.query["days"]) || 30));
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  // Bootstrap: if no snapshot exists yet, take one now so the tab isn't empty.
+  const any = await prisma.storageDailyMetric.findFirst({ select: { id: true } });
+  if (!any) await snapshotStorage();
+
+  const latestDbRow = await prisma.storageDailyMetric.findFirst({
+    where: { scope: "database" }, orderBy: { date: "desc" },
+  });
+  const latestDate = latestDbRow?.date ?? null;
+  const n = (v: bigint) => Number(v);
+
+  const [tables, sources, artifactTypes, topUsers, dbTrend, firstDbRow] = await Promise.all([
+    latestDate ? prisma.storageDailyMetric.findMany({ where: { scope: "table", date: latestDate }, orderBy: { bytesTotal: "desc" } }) : [],
+    latestDate ? prisma.storageDailyMetric.findMany({ where: { scope: "source", date: latestDate }, orderBy: { bytesTotal: "desc" } }) : [],
+    latestDate ? prisma.storageDailyMetric.findMany({ where: { scope: "artifactType", date: latestDate }, orderBy: { bytesTotal: "desc" } }) : [],
+    latestDate ? prisma.storageDailyMetric.findMany({ where: { scope: "user", date: latestDate }, orderBy: { bytesTotal: "desc" }, take: 20 }) : [],
+    prisma.storageDailyMetric.findMany({ where: { scope: "database", date: { gte: since } }, orderBy: { date: "asc" } }),
+    prisma.storageDailyMetric.findFirst({ where: { scope: "database", date: { gte: since } }, orderBy: { date: "asc" } }),
+  ]);
+
+  const dbBytes = latestDbRow ? n(latestDbRow.bytesTotal) : 0;
+  const blobBytes = artifactTypes.reduce((s, a) => s + n(a.bytesTotal), 0);
+
+  // Growth rate from the earliest→latest database snapshot in the window.
+  let growthBytesPerDay = 0;
+  if (firstDbRow && latestDbRow && latestDate) {
+    const spanDays = Math.max(1, (latestDate.getTime() - firstDbRow.date.getTime()) / 86_400_000);
+    growthBytesPerDay = (dbBytes - n(firstDbRow.bytesTotal)) / spanDays;
+  }
+
+  res.json({
+    asOf: latestDate ? latestDate.toISOString().slice(0, 10) : null,
+    database: { bytesTotal: dbBytes, gb: Number((dbBytes / GB).toFixed(3)) },
+    blob: { bytesTotal: blobBytes, gb: Number((blobBytes / GB).toFixed(3)) },
+    projection: {
+      dbUsdPerMonth: Number(((dbBytes / GB) * config.storage.cloudDbUsdPerGbMonth).toFixed(2)),
+      blobUsdPerMonth: Number(((blobBytes / GB) * config.storage.cloudBlobUsdPerGbMonth).toFixed(2)),
+      dbRateUsdPerGbMonth: config.storage.cloudDbUsdPerGbMonth,
+      blobRateUsdPerGbMonth: config.storage.cloudBlobUsdPerGbMonth,
+    },
+    growth: {
+      bytesPerDay: Math.round(growthBytesPerDay),
+      gbPerDay: Number((growthBytesPerDay / GB).toFixed(4)),
+      projectedGb30d: Number(((dbBytes + growthBytesPerDay * 30) / GB).toFixed(3)),
+    },
+    tables: tables.map((t) => ({
+      key: t.key, bytesTotal: n(t.bytesTotal), bytesHeap: n(t.bytesHeap), bytesIndex: n(t.bytesIndex),
+      bytesToast: n(t.bytesToast), rowCount: n(t.rowCount),
+    })),
+    sources: sources.map((s) => ({ key: s.key, bytesTotal: n(s.bytesTotal), rowCount: n(s.rowCount) })),
+    artifactTypes: artifactTypes.map((a) => ({ key: a.key, bytesTotal: n(a.bytesTotal), rowCount: n(a.rowCount) })),
+    topUsers: topUsers.map((u) => ({ key: u.key, bytesTotal: n(u.bytesTotal), rowCount: n(u.rowCount) })),
+    trend: dbTrend.map((d) => ({ date: d.date.toISOString().slice(0, 10), bytesTotal: n(d.bytesTotal) })),
+  });
+}));
+
+// ─── POST /api/admin/storage/snapshot ─────────────────────────────────────────
+// Take a storage snapshot on demand (otherwise the daily scheduler does it).
+adminRouter.post("/storage/snapshot", asyncHandler(async (_req: AuthRequest, res) => {
+  const rows = await snapshotStorage();
+  res.json({ rows });
+}));
+
+// ─── GET /api/admin/jobs ──────────────────────────────────────────────────────
+// Filterable job-pool explorer: browse the actual JobPosting rows with their source,
+// per-job acquisition + embedding cost, on-disk size, and best match score.
+adminRouter.get("/jobs", asyncHandler(async (req: AuthRequest, res) => {
+  const q = req.query as Record<string, string | undefined>;
+  const page = Math.max(1, Number(q["page"]) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(q["pageSize"]) || 25));
+  const status = q["status"] || "active"; // active | all
+  const sortKey = ["firstSeenAt", "acquisitionCostUsd", "company", "postedAt"].includes(q["sort"] ?? "")
+    ? (q["sort"] as string) : "firstSeenAt";
+  const order = q["order"] === "asc" ? "asc" : "desc";
+
+  const where: Prisma.JobPostingWhereInput = {};
+  if (status !== "all") where.postingStatus = status;
+  if (q["source"]) where.sourceName = q["source"];
+  if (q["remoteType"]) where.remoteType = q["remoteType"];
+  if (q["seniority"]) where.seniority = q["seniority"];
+  if (q["company"]) where.company = { contains: q["company"], mode: "insensitive" };
+  if (q["q"]) where.title = { contains: q["q"], mode: "insensitive" };
+  if (q["freshnessDays"]) {
+    const fd = Number(q["freshnessDays"]);
+    if (Number.isFinite(fd) && fd > 0) where.firstSeenAt = { gte: new Date(Date.now() - fd * 86_400_000) };
+  }
+
+  const [total, rows] = await Promise.all([
+    prisma.jobPosting.count({ where }),
+    prisma.jobPosting.findMany({
+      where,
+      orderBy: { [sortKey]: order },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true, title: true, company: true, location: true, sourceName: true, remoteType: true,
+        seniority: true, employmentType: true, postingStatus: true, postedAt: true, firstSeenAt: true,
+        acquisitionCostUsd: true, embedCostUsd: true, sourceCount: true,
+      },
+    }),
+  ]);
+
+  const ids = rows.map((r) => r.id);
+  // Per-row size + best match are fetched only for the current page (cheap).
+  const [sizes, matches] = ids.length
+    ? await Promise.all([
+        prisma.$queryRaw<{ id: string; bytes: bigint }[]>`
+          SELECT "id",
+            (COALESCE(pg_column_size("description"), 0) + COALESCE(pg_column_size("descriptionClean"), 0)
+             + COALESCE(pg_column_size("rawJson"), 0) + COALESCE(pg_column_size("embedding"), 0))::bigint AS bytes
+          FROM "JobPosting" WHERE "id" IN (${Prisma.join(ids)})`,
+        prisma.$queryRaw<{ pid: string; matches: number; best: number }[]>`
+          SELECT j."postingId" AS pid, COUNT(m.id)::int AS matches, COALESCE(MAX(m."score"), 0)::int AS best
+          FROM "Job" j JOIN "JobMatch" m ON m."jobId" = j.id
+          WHERE j."postingId" IN (${Prisma.join(ids)}) GROUP BY j."postingId"`,
+      ])
+    : [[], []];
+  const sizeBy = new Map(sizes.map((s) => [s.id, Number(s.bytes)]));
+  const matchBy = new Map(matches.map((m) => [m.pid, { matches: Number(m.matches), best: Number(m.best) }]));
+
+  res.json({
+    page, pageSize, total, totalPages: Math.ceil(total / pageSize),
+    jobs: rows.map((r) => {
+      const acq = r.acquisitionCostUsd ?? null;
+      const emb = r.embedCostUsd ?? null;
+      const totalCost = acq != null || emb != null ? Number(((acq ?? 0) + (emb ?? 0)).toFixed(4)) : null;
+      return {
+        id: r.id, title: r.title, company: r.company, location: r.location, sourceName: r.sourceName,
+        remoteType: r.remoteType, seniority: r.seniority, employmentType: r.employmentType,
+        postingStatus: r.postingStatus, postedAt: r.postedAt?.toISOString() ?? null,
+        firstSeenAt: r.firstSeenAt.toISOString(), sourceCount: r.sourceCount,
+        acquisitionCostUsd: acq, embedCostUsd: emb, totalCostUsd: totalCost,
+        sizeBytes: sizeBy.get(r.id) ?? 0,
+        matchCount: matchBy.get(r.id)?.matches ?? 0,
+        bestScore: matchBy.get(r.id)?.best ?? null,
+      };
+    }),
+  });
+}));
+
+// ─── GET /api/admin/jobs/:id ──────────────────────────────────────────────────
+// Single-posting detail: full record, cost + size breakdown, acquiring run, matches.
+adminRouter.get("/jobs/:id", asyncHandler(async (req: AuthRequest, res) => {
+  const id = req.params["id"] as string;
+  const posting = await prisma.jobPosting.findUnique({ where: { id } });
+  if (!posting) throw badRequest("Posting not found");
+
+  const [sizeRow, matchRows, run] = await Promise.all([
+    prisma.$queryRaw<{ bytes: bigint; raw: bigint; emb: bigint }[]>`
+      SELECT (COALESCE(pg_column_size("description"), 0) + COALESCE(pg_column_size("descriptionClean"), 0)
+              + COALESCE(pg_column_size("rawJson"), 0) + COALESCE(pg_column_size("embedding"), 0))::bigint AS bytes,
+             COALESCE(pg_column_size("rawJson"), 0)::bigint AS raw,
+             COALESCE(pg_column_size("embedding"), 0)::bigint AS emb
+      FROM "JobPosting" WHERE "id" = ${id}`,
+    prisma.$queryRaw<{ score: number; tier: string | null; userId: string }[]>`
+      SELECT m."score"::int AS score, m."statusTier" AS tier, m."userId"
+      FROM "Job" j JOIN "JobMatch" m ON m."jobId" = j.id
+      WHERE j."postingId" = ${id} ORDER BY m."score" DESC LIMIT 25`,
+    posting.ingestRunId ? prisma.globalIngestRun.findUnique({ where: { id: posting.ingestRunId } }) : Promise.resolve(null),
+  ]);
+  const sz = sizeRow[0];
+
+  res.json({
+    posting: {
+      id: posting.id, title: posting.title, company: posting.company, companyDomain: posting.companyDomain,
+      location: posting.location, remoteType: posting.remoteType, seniority: posting.seniority,
+      employmentType: posting.employmentType, sourceName: posting.sourceName, atsPlatform: posting.atsPlatform,
+      jobUrl: posting.jobUrl, applyUrl: posting.applyUrl, postingStatus: posting.postingStatus,
+      postedAt: posting.postedAt?.toISOString() ?? null, firstSeenAt: posting.firstSeenAt.toISOString(),
+      lastSeenAt: posting.lastSeenAt.toISOString(), sourceCount: posting.sourceCount,
+      salaryMin: posting.salaryMin, salaryMax: posting.salaryMax, salaryCurrency: posting.salaryCurrency,
+      skills: posting.skillsJson, description: (posting.descriptionClean ?? posting.description ?? "").slice(0, 4000),
+      embeddedAt: posting.embeddedAt?.toISOString() ?? null, embedModel: posting.embedModel,
+    },
+    cost: {
+      acquisitionCostUsd: posting.acquisitionCostUsd,
+      embedCostUsd: posting.embedCostUsd,
+      totalCostUsd: posting.acquisitionCostUsd != null || posting.embedCostUsd != null
+        ? Number(((posting.acquisitionCostUsd ?? 0) + (posting.embedCostUsd ?? 0)).toFixed(4)) : null,
+    },
+    size: { totalBytes: sz ? Number(sz.bytes) : 0, rawJsonBytes: sz ? Number(sz.raw) : 0, embeddingBytes: sz ? Number(sz.emb) : 0 },
+    acquiredByRun: run ? { id: run.id, sourceTag: run.sourceTag, startedAt: run.startedAt?.toISOString() ?? null } : null,
+    matches: matchRows.map((m) => ({ score: m.score, tier: m.tier, userId: m.userId })),
+  });
 }));

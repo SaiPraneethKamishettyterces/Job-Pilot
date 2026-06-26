@@ -5,13 +5,17 @@ import { config } from "../../../lib/config.js";
 import { stripHtml, type RawJob } from "../ats-sources.js";
 import { runActor, str } from "./apify.js";
 
-export async function scrapeHiringCafe(keywords: string[], maxItems: number): Promise<RawJob[]> {
+export async function scrapeHiringCafe(
+  keywords: string[],
+  maxItems: number,
+  ctx: { runId?: string | null } = {},
+): Promise<RawJob[]> {
   const searchQueries = keywords.length ? keywords : ["software engineer"];
-  const items = await runActor(
+  const { items, unitCostUsd } = await runActor(
     config.apify.actors.hiringcafe,
     { searchQueries, maxItems, includeDescriptionHtml: false },
     maxItems,
-    "hiringcafe",
+    { sourceKey: "hiringcafe", runId: ctx.runId, query: searchQueries.join(", ") },
   );
   return items.map((j, i) => ({
     source: "hiringcafe",
@@ -28,5 +32,6 @@ export async function scrapeHiringCafe(keywords: string[], maxItems: number): Pr
     workplaceType: str(j, "remoteType"),
     commitment: str(j, "employmentType"),
     raw: j,
+    acquisitionCostUsd: unitCostUsd,
   }));
 }

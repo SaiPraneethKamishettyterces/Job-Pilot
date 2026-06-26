@@ -82,6 +82,11 @@ export const config = {
     modelFlash: optional("AI_MODEL_FLASH", "gemini-2.5-flash"),
     modelPro: optional("AI_MODEL_PRO", "gemini-2.5-pro"),
     embedModel: optional("AI_EMBED_MODEL", "text-embedding-004"),
+    // Embedding cost rate for admin cost attribution (USD per 1M input tokens).
+    // Default 0 — the default provider (Gemini text-embedding-004) is free-tier, so
+    // "free isn't free" shows $0 until you move to a paid embedding provider; set
+    // this to that provider's rate to populate per-job/per-source embedding cost.
+    embedUsdPerMillionTokens: numFloat("AI_EMBED_USD_PER_MILLION_TOKENS", 0),
 
     // Which provider tailors resumes (Issue #77). Default Claude Sonnet for
     // quality; set "local"/"openai" to route through the OpenAI-compatible
@@ -243,6 +248,12 @@ export const config = {
   // external object store. Only the upload size cap is configurable here.
   storage: {
     maxUploadMb: num("MAX_UPLOAD_MB", 8),
+    // Cloud-migration cost projection (admin Storage tab). Bytes tracked today are
+    // multiplied by these $/GB-month rates to project the cloud bill once the DB
+    // moves to Cloud SQL and the in-DB Artifact blobs move to a GCS bucket.
+    // Defaults ≈ GCP us-central1 list prices (Cloud SQL SSD vs GCS Standard).
+    cloudDbUsdPerGbMonth: numFloat("CLOUD_DB_USD_PER_GB_MONTH", 0.17),
+    cloudBlobUsdPerGbMonth: numFloat("CLOUD_BLOB_USD_PER_GB_MONTH", 0.02),
   },
 
   // ── Billing / finance dashboard ─────────────────────────────────────────

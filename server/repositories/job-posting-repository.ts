@@ -92,8 +92,10 @@ export async function upsertPosting(n: NormalizedJob): Promise<UpsertResult> {
   if (!existing) {
     const row = await prisma.jobPosting.create({
       // firstSeenAt = global first sighting (carried from JobSeen), NOT now() — so a
-      // re-pulled-after-purge open job is not re-flagged fresh.
-      data: { ...base, dedupeKey: n.dedupeKey, firstSeenAt, lastSeenAt: new Date() },
+      // re-pulled-after-purge open job is not re-flagged fresh. acquisitionCostUsd is
+      // stamped ONLY here (first insert) — re-sightings must not overwrite it, else a
+      // later free re-sighting would zero out a paid job's acquisition cost.
+      data: { ...base, dedupeKey: n.dedupeKey, firstSeenAt, lastSeenAt: new Date(), acquisitionCostUsd: n.acquisitionCostUsd },
       select: { id: true },
     });
     return { id: row.id, isNew: true, contentChanged: true };
@@ -122,12 +124,15 @@ export function findUnembedded(limit: number) {
   });
 }
 
-/** Write a posting's embedding vector via raw SQL (Unsupported column). */
-export async function writeEmbedding(id: string, vector: number[], model: string): Promise<void> {
+/**
+ * Write a posting's embedding vector via raw SQL (Unsupported column). Also stamps
+ * the per-row embedding cost (USD) so total cost per job = acquisition + embed.
+ */
+export async function writeEmbedding(id: string, vector: number[], model: string, embedCostUsd = 0): Promise<void> {
   const lit = toVectorLiteral(vector);
   await prisma.$executeRaw`
     UPDATE "JobPosting"
-    SET "embedding" = ${lit}::vector, "embeddedAt" = now(), "embedModel" = ${model}
+    SET "embedding" = ${lit}::vector, "embeddedAt" = now(), "embedModel" = ${model}, "embedCostUsd" = ${embedCostUsd}
     WHERE "id" = ${id}`;
 }
 
