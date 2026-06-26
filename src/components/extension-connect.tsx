@@ -18,8 +18,20 @@ interface ExtMessage {
   ok?: boolean;
 }
 
+// Shared flag the manual-apply flow (Jobs Found) reads to decide whether to nudge
+// the extension. Mirroring connection state here keeps the two surfaces in sync.
+const EXT_FLAG = "jobpilot:extension";
+const setExtFlag = (on: boolean) =>
+  on ? localStorage.setItem(EXT_FLAG, "installed") : localStorage.removeItem(EXT_FLAG);
+
 export function ExtensionConnect() {
   const [state, setState] = useState<State>("checking");
+
+  // Keep the apply-flow flag in sync with detection/connection state.
+  useEffect(() => {
+    if (state === "installed" || state === "connected") setExtFlag(true);
+    else if (state === "not_installed") setExtFlag(false);
+  }, [state]);
 
   useEffect(() => {
     function onMsg(e: MessageEvent) {
@@ -76,14 +88,19 @@ export function ExtensionConnect() {
                 </ol>
               </div>
             )}
-            <Button size="sm" onClick={connect} disabled={state === "connecting" || state === "checking"}>
-              {state === "connecting" || state === "checking" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Puzzle className="h-4 w-4" />
-              )}
-              {state === "connecting" ? "Connecting…" : "Connect extension"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={connect} disabled={state === "connecting" || state === "checking"}>
+                {state === "connecting" || state === "checking" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Puzzle className="h-4 w-4" />
+                )}
+                {state === "connecting" ? "Connecting…" : "Connect extension"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setExtFlag(true); setState("installed"); toast.success("Marked as installed (testing)"); }}>
+                Mark installed (testing)
+              </Button>
+            </div>
           </>
         )}
       </CardContent>

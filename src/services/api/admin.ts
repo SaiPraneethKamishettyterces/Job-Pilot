@@ -29,6 +29,114 @@ export type IngestionStatus = {
   runs: IngestRun[];
 };
 
+export type ClaudeUsage = {
+  windowDays: number;
+  pricing: {
+    model: string;
+    inputPerMtok: number;
+    outputPerMtok: number;
+    cacheReadMultiplier: number;
+    cacheCreationPriced: boolean;
+  };
+  totals: {
+    claudeCostUsd: number;
+    claudeCalls: number;
+    totalAiCalls: number;
+    localCalls: number;
+    appsTotal: number;
+    appsWithClaude: number;
+    claudePct: number;
+    blendedCostPerApp: number;
+  };
+  budget: {
+    monthlyBudgetUsd: number;
+    monthToDateUsd: number;
+    monthPct: number;
+    projectedMonthlyUsd: number;
+    costPerResumeWarnUsd: number;
+    costPerResumeOverWarn: boolean;
+  };
+  margins: {
+    slug: string;
+    name: string;
+    priceMonthly: number;
+    applicationsPerMonth: number;
+    revenuePerApp: number;
+    marginClaudeResume: number;
+    marginBlendedApp: number;
+    claudeResumeProfitable: boolean;
+  }[];
+  recommendations: {
+    id: string;
+    title: string;
+    detail: string;
+    estSavingPerResumeUsd: number;
+  }[];
+  perFeature: {
+    featureName: string;
+    model: string;
+    provider: "anthropic" | "local";
+    isClaude: boolean;
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    costUsd: number;
+    avgCostUsd: number;
+  }[];
+  resume: {
+    calls: number;
+    avgCostUsd: number;
+    minCostUsd: number;
+    maxCostUsd: number;
+    avgInputTokens: number;
+    avgOutputTokens: number;
+    inputCostUsd: number;
+    outputCostUsd: number;
+    sampleResumes: number;
+    sectionShares: { section: string; pct: number; estCostUsd: number }[];
+  };
+  costFactors: {
+    measuredCalls: number;
+    input: { factor: string; tokens: number; avgTokens: number; costUsd: number; pct: number }[];
+    output: { factor: string; tokens: number; avgTokens: number; costUsd: number; pct: number }[];
+  };
+  spendPerUser: { userId: string; name: string; costUsd: number; calls: number; avgCostUsd: number }[];
+  trend: { date: string; costUsd: number; calls: number; cumulativeUsd: number }[];
+  recent: {
+    createdAt: string;
+    jobTitle: string | null;
+    company: string | null;
+    status: string | null;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    costUsd: number;
+    applicationId: string | null;
+  }[];
+  reconciliation: ClaudeReconciliation | null;
+};
+
+export type ClaudeReconciliation = {
+  actualBilledUsd: number;
+  totalInput: number;
+  totalOutput: number;
+  periodStart: string;
+  periodEnd: string;
+  importedAt: string;
+  byKey: { key: string; costUsd: number; input: number; output: number }[];
+};
+
+export async function getClaudeUsage(days = 30): Promise<ClaudeUsage> {
+  const { data } = await api.get<ClaudeUsage>("/api/admin/claude-usage", { params: { days } });
+  return data;
+}
+
+export async function reconcileClaudeUsage(csv: string): Promise<ClaudeReconciliation> {
+  const { data } = await api.post<ClaudeReconciliation>("/api/admin/claude-usage/reconcile", { csv });
+  return data;
+}
+
 export async function getScraperSources(): Promise<ScraperSource[]> {
   const { data } = await api.get<{ sources: ScraperSource[] }>("/api/admin/scrapers");
   return data.sources;
@@ -90,6 +198,8 @@ export type RuntimeSettings = {
   timezone: string;
   weekendIngest: boolean;
   purgeWeekday: number;
+  claudeMonthlyBudgetUsd: number;
+  claudeCostPerResumeWarnUsd: number;
 };
 
 export type JobAnalytics = {

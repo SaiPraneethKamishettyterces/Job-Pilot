@@ -53,14 +53,16 @@ applicationsRouter.get("/", requireAuth, asyncHandler(async (req: AuthRequest, r
   // so the candidate sees how fresh each posting is.
   const jobIds = applications.map((a) => a.jobId).filter((id): id is string => Boolean(id));
   const jobs = jobIds.length
-    ? await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, ingestedAt: true, createdAt: true } })
+    ? await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, ingestedAt: true, createdAt: true, postedAt: true } })
     : [];
   const scrapedByJob = new Map(jobs.map((j) => [j.id, (j.ingestedAt ?? j.createdAt).toISOString()]));
+  const postedByJob = new Map(jobs.map((j) => [j.id, j.postedAt?.toISOString() ?? null]));
 
   const enriched = applications.map((a) => ({
     ...a,
     resumeModel: modelByApp.get(a.id) ?? null,
     scrapedAt: a.jobId ? scrapedByJob.get(a.jobId) ?? null : null,
+    postedAt: a.jobId ? postedByJob.get(a.jobId) ?? null : null,
   }));
 
   res.json({ applications: enriched, total });

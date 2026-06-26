@@ -4,6 +4,7 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { jobRepository } from "../repositories/job-repository.js";
+import { prisma } from "../lib/db.js";
 import { parseJobDescription, fetchUrlText } from "../services/job-discovery/job-parser.js";
 import { scoreJobMatch } from "../services/matching/match-scorer.js";
 import { buildProfileSnapshot } from "../services/matching/profile-snapshot.js";
@@ -226,6 +227,54 @@ jobsRouter.post("/:id/rescore", requireAuth, aiLimiter, asyncHandler(async (req:
     reasons: result.reasons,
     risks: result.risks,
   });
+}));
+
+// GET /api/jobs/:id/application — read-only: the user's existing application for this
+// job + its generated docs (so the apply flow can REUSE already-generated documents
+// instead of re-generating). Does NOT create anything.
+jobsRouter.get("/:id/application", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+  const jobId = req.params["id"] as string;
+  const app = await prisma.application.findFirst({
+    where: { userId: req.userId!, jobId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      documents: {
+        where: { type: { in: ["resume", "cover_letter", "cold_email"] } },
+        select: { id: true, type: true, fileUrl: true, content: true, createdAt: true },
+      },
+    },
+  });
+  if (!app) { res.json({ applicationId: null, status: null, documents: [] }); return; }
+  res.json({ applicationId: app.id, status: app.status, documents: app.documents });
+}));
+
+// POST /api/jobs/:id/apply — start a manual application for an EXISTING matched job.
+// Finds-or-creates ONE Application linked to that exact job (so it dedups and so the
+// job correctly "moves" out of Jobs Found once marked APPLIED). Does NOT mark applied
+// — that happens after the user confirms via /applications/:id/mark-applied.
+jobsRouter.post("/:id/apply", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+  const jobId = req.params["id"] as string;
+  const userId = req.userId!;
+  const match = await jobRepository.findMatchWithJob(jobId, userId);
+  if (!match) throw notFound("Job not found");
+  const job = match.job;
+
+  let application = await prisma.application.findFirst({ where: { userId, jobId } });
+  if (!application) {
+    application = await prisma.application.create({
+      data: {
+        userId, jobId,
+        company: job.company, roleTitle: job.title,
+        jobUrl: job.jobUrl, atsPlatform: job.atsPlatform,
+        matchScore: match.score, status: "GENERATED",
+      },
+    });
+    await prisma.applicationEvent.create({
+      data: { applicationId: application.id, type: "created_from_jobs", description: "Started from Jobs Found" },
+    });
+    logger.info({ userId, jobId, applicationId: application.id }, "Application created from Jobs Found apply");
+  }
+  res.json({ applicationId: application.id, status: application.status });
 }));
 
 // DELETE /api/jobs/:id — remove job match (and job if no other matches)

@@ -1,10 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, DollarSign, Database, Receipt, BarChart3, LogOut, Activity } from "lucide-react";
+import { LayoutDashboard, DollarSign, Database, Receipt, BarChart3, LogOut, Activity, Sparkles } from "lucide-react";
 import { TOKEN_KEY } from "@/services/api/client";
 
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/financials", label: "Financials", icon: DollarSign, end: false },
+  { to: "/claude-usage", label: "Claude Usage", icon: Sparkles, end: false },
   { to: "/sources", label: "Sources & Scrapers", icon: Database, end: false },
   { to: "/job-analytics", label: "Job Analytics", icon: BarChart3, end: false },
   { to: "/expenses", label: "Job-Pulling Expenses", icon: Receipt, end: false },

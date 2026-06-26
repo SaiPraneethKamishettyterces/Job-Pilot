@@ -126,6 +126,13 @@ export async function runApplicationPipeline(runId: string): Promise<void> {
           .updateMany({ where: { userId, canonicalKey: item.canonicalKey }, data: { status: "applied" } })
           .catch(() => {});
       }
+      // Documents are generated on demand when the user clicks Apply (one tailored
+      // set per job — clearer mapping, no wasted AI). The pipeline only shortlists.
+      // Flip PIPELINE_AUTOGEN_DOCS=true to restore legacy bulk generation.
+      if (!config.automation.pipelineAutogenDocs) {
+        done++;
+        continue;
+      }
       try {
         const gen = await generateApplicationDocuments(application.id);
         done++;

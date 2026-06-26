@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Plus, Loader2, ExternalLink, MapPin, DollarSign, Briefcase, Heart, X, SlidersHorizontal,
-  Building2, Clock, CheckCircle2, Sparkles, FileText, FileSignature, Mail,
+  Building2, Clock, CheckCircle2, Sparkles, DownloadCloud, ArrowDownUp, Download, FileText, FileSignature, Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatRelativeDate } from "@/lib/utils";
-import { addJob, getJobs, removeJob, generateDocuments, markApplied, type JobWithMatch } from "@/services/api";
-import { createApplicationFromUrl } from "@/services/api/apply-link";
+import { addJob, getJobs, removeJob, generateDocuments, markApplied, getIngestionRuns, applyToJob, getJobApplication, getApplication, downloadFile, type JobWithMatch, type ApplicationDocument } from "@/services/api";
+import { ActiveRunBanner, isIngestActive } from "@/components/ingestion/ingestion";
 
 // ─── Extension detection ──────────────────────────────────────────────────────
 // ponytail: a web page can only know the extension is present if the extension
@@ -30,6 +30,11 @@ function isExtensionInstalled(): boolean {
   );
 }
 const EXTENSION_STORE_URL = "https://chrome.google.com/webstore/"; // ponytail: real listing URL when published.
+
+// Local tally of manual applies — drives the "install the extension?" nudge every 10th.
+const APPLY_COUNT_KEY = "jobpilot:applyCount";
+const getApplyCount = () => Number(localStorage.getItem(APPLY_COUNT_KEY) || 0);
+const bumpApplyCount = () => localStorage.setItem(APPLY_COUNT_KEY, String(getApplyCount() + 1));
 
 // ─── Match score ring ──────────────────────────────────────────────────────────
 function matchLabel(score: number) {
@@ -96,10 +101,10 @@ function salaryText(j: JobWithMatch["job"]) {
 
 // ─── Job list card ───────────────────────────────────────────────────────────
 function JobCard({
-  item, selected, liked, onSelect, onLike, onHide,
+  item, selected, liked, onSelect, onLike, onHide, onApply,
 }: {
   item: JobWithMatch; selected: boolean; liked: boolean;
-  onSelect: () => void; onLike: () => void; onHide: () => void;
+  onSelect: () => void; onLike: () => void; onHide: () => void; onApply: () => void;
 }) {
   const { job } = item;
   const salary = salaryText(job);
@@ -136,121 +141,37 @@ function JobCard({
               {salary && <Badge variant="outline" className="rounded-full gap-1"><DollarSign className="h-3 w-3" />{salary}</Badge>}
               {job.atsPlatform && <Badge variant="outline" className="rounded-full capitalize">{job.atsPlatform}</Badge>}
             </div>
-            {job.postedAt && (
-              <p className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" /> {formatRelativeDate(job.postedAt)}
-              </p>
-            )}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {job.postedAt && (
+                <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> Posted {formatRelativeDate(job.postedAt)}</span>
+              )}
+              <span className="flex items-center gap-1"><DownloadCloud className="h-3 w-3" /> Fetched {formatRelativeDate(item.matchedAt)}</span>
+            </div>
           </div>
         </div>
         <MatchWidget score={item.score} reasons={item.reasons} />
       </div>
-    </div>
-  );
-}
 
-// ─── Apply multi-step modal ─────────────────────────────────────────────────
-type ApplyStep = "docs" | "generating" | "extension";
-function ApplyModal({
-  job, onClose, onApplied,
-}: {
-  job: JobWithMatch["job"];
-  onClose: () => void;
-  onApplied: (appId: string) => void;
-}) {
-  const [step, setStep] = useState<ApplyStep>("docs");
-  const [opts, setOpts] = useState({ resume: true, cover_letter: true, cold_email: true });
-  const [appId, setAppId] = useState<string | null>(null);
-
-  const finish = (id: string) => {
-    if (job.jobUrl) window.open(job.jobUrl, "_blank", "noopener,noreferrer");
-    onApplied(id);
-    onClose();
-  };
-  const afterDocs = (id: string) => {
-    if (isExtensionInstalled()) finish(id);
-    else { setAppId(id); setStep("extension"); }
-  };
-
-  const generateFlow = useMutation({
-    mutationFn: async () => {
-      if (!job.jobUrl) throw new Error("This job has no application URL.");
-      const { applicationId } = await createApplicationFromUrl(job.jobUrl);
-      await generateDocuments(applicationId); // backend generates the supported set
-      return applicationId;
-    },
-    onSuccess: (id) => { toast.success("Documents ready!"); afterDocs(id); },
-    onError: (e: Error) => { toast.error(e.message || "Could not generate documents"); setStep("docs"); },
-  });
-
-  const skipManual = useMutation({
-    mutationFn: async () => {
-      if (!job.jobUrl) throw new Error("This job has no application URL.");
-      const { applicationId } = await createApplicationFromUrl(job.jobUrl);
-      return applicationId;
-    },
-    onSuccess: (id) => afterDocs(id),
-    onError: (e: Error) => toast.error(e.message || "Something went wrong"),
-  });
-
-  const DOCS = [
-    { key: "resume" as const, label: "Tailored Resume", icon: FileText },
-    { key: "cover_letter" as const, label: "Cover Letter", icon: FileSignature },
-    { key: "cold_email" as const, label: "Cold Email", icon: Mail },
-  ];
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        {step === "extension" ? (
-          <>
-            <DialogHeader><DialogTitle>Set up Auto-Apply Extension</DialogTitle></DialogHeader>
-            <p className="text-sm text-muted-foreground">
-              To auto-apply, install the JobPilot Chrome extension. It takes less than a minute.
-            </p>
-            <div className="mt-2 flex flex-col gap-2">
-              <Button onClick={() => window.open(EXTENSION_STORE_URL, "_blank", "noopener,noreferrer")}>Install Extension</Button>
-              <Button variant="ghost" onClick={() => appId && finish(appId)}>Skip — I'll apply manually</Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <DialogHeader><DialogTitle>Prepare your application</DialogTitle></DialogHeader>
-            <p className="text-sm">
-              <span className="font-semibold">{job.title}</span>
-              <span className="text-muted-foreground"> · {job.company}</span>
-            </p>
-            <div className="mt-2 space-y-2">
-              {DOCS.map(({ key, label, icon: Icon }) => (
-                <label key={key} className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
-                  <span className="flex items-center gap-2 text-sm font-medium"><Icon className="h-4 w-4 text-primary" />{label}</span>
-                  <Switch checked={opts[key]} onCheckedChange={(v) => setOpts((o) => ({ ...o, [key]: v }))} disabled={step === "generating"} aria-label={label} />
-                </label>
-              ))}
-            </div>
-            {step === "generating" ? (
-              <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Generating your documents…
-              </div>
-            ) : (
-              <div className="mt-3 flex flex-col gap-2">
-                <Button onClick={() => { setStep("generating"); generateFlow.mutate(); }} disabled={!job.jobUrl}>
-                  <Sparkles className="h-4 w-4" /> Generate Documents &amp; Continue
-                </Button>
-                <button
-                  onClick={() => skipManual.mutate()}
-                  disabled={skipManual.isPending || !job.jobUrl}
-                  className="text-center text-sm text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50"
-                >
-                  {skipManual.isPending ? "Opening…" : "Skip and apply manually"}
-                </button>
-                {!job.jobUrl && <p className="text-center text-xs text-destructive">No application URL on this job.</p>}
-              </div>
-            )}
-          </>
+      <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+        <Button
+          size="sm" variant="success" className="gap-1.5"
+          disabled={!job.jobUrl}
+          onClick={(e) => { e.stopPropagation(); onApply(); }}
+        >
+          <ExternalLink className="h-3.5 w-3.5" /> Apply
+        </Button>
+        {job.jobUrl && (
+          <a
+            href={job.jobUrl} target="_blank" rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-xs text-muted-foreground hover:text-primary hover:underline"
+          >
+            View posting
+          </a>
         )}
-      </DialogContent>
-    </Dialog>
+        {!job.jobUrl && <span className="text-xs text-muted-foreground">No application URL</span>}
+      </div>
+    </div>
   );
 }
 
@@ -378,18 +299,35 @@ export function JobsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [applyJob, setApplyJob] = useState<JobWithMatch["job"] | null>(null);
   const [liked, setLiked] = useState<Set<string>>(new Set()); // ponytail: local only — no like endpoint yet.
   const [banner, setBanner] = useState<{ appId: string; title: string; company: string } | null>(null);
   const [pendingReturn, setPendingReturn] = useState<{ appId: string; title: string; company: string } | null>(null);
+  // Multi-step apply flow: extension nudge → check existing → docs choice → generating → ready.
+  type ApplyStep = "extension" | "checking" | "documents" | "generating" | "ready";
+  const [applyFlow, setApplyFlow] = useState<
+    { job: JobWithMatch["job"]; step: ApplyStep; appId?: string; docs?: ApplicationDocument[] } | null
+  >(null);
 
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState("ALL");
   const [remote, setRemote] = useState("ALL");
   const [posted, setPosted] = useState("ALL");
+  const [sort, setSort] = useState<"newest" | "oldest" | "score">("newest");
   const [allFiltersOpen, setAllFiltersOpen] = useState(false);
 
-  const { data, isLoading, isError } = useQuery({ queryKey: ["jobs"], queryFn: () => getJobs() });
+  // Poll while an ingestion run is active so freshly fetched jobs stream in live.
+  const runsQuery = useQuery({
+    queryKey: ["ingestionRuns"],
+    queryFn: getIngestionRuns,
+    refetchInterval: (q) => (q.state.data?.runs.some((r) => isIngestActive(r.status)) ? 2500 : false),
+  });
+  const hasActiveRun = Boolean(runsQuery.data?.runs.some((r) => isIngestActive(r.status)));
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["jobs"],
+    queryFn: () => getJobs(),
+    refetchInterval: hasActiveRun ? 3000 : false,
+  });
   const jobs = useMemo(() => data?.jobs ?? [], [data]);
 
   const removeMutation = useMutation({
@@ -406,6 +344,92 @@ export function JobsPage() {
     },
     onError: () => toast.error("Could not update status"),
   });
+
+  // Entry point. Extension nudge shows only every 10th apply (and only if it isn't
+  // installed) — otherwise we go straight to checking for existing documents.
+  const handleApply = (job: JobWithMatch["job"]) => {
+    if (!job.jobUrl) { toast.error("This job has no application URL."); return; }
+    const needExt = !isExtensionInstalled() && (getApplyCount() + 1) % 10 === 0;
+    if (needExt) setApplyFlow({ job, step: "extension" });
+    else checkExisting(job);
+  };
+
+  // After the extension nudge (or directly): reuse already-generated docs for this job
+  // instead of asking to generate again. If none exist yet, offer to generate.
+  const checkExisting = async (job: JobWithMatch["job"]) => {
+    setApplyFlow({ job, step: "checking" });
+    try {
+      const { applicationId, documents } = await getJobApplication(job.id);
+      if (applicationId && documents.length > 0) {
+        setApplyFlow({ job, step: "ready", appId: applicationId, docs: documents });
+      } else {
+        setApplyFlow({ job, step: "documents" });
+      }
+    } catch {
+      setApplyFlow({ job, step: "documents" }); // lookup failed → let them generate
+    }
+  };
+
+  // Open the posting (a user gesture from the clicked button → no popup block), count
+  // the apply, and arm the "Did you apply?" prompt. Nothing is APPLIED until confirmed.
+  const openPosting = (job: JobWithMatch["job"], appId: string) => {
+    bumpApplyCount();
+    window.open(job.jobUrl!, "_blank", "noopener,noreferrer");
+    setPendingReturn({ appId, title: job.title, company: job.company });
+    setApplyFlow(null);
+  };
+
+  // "Do it later" — apply without generating docs: open posting now, create the app in
+  // the background, then arm the confirm prompt.
+  const applyWithoutDocs = (job: JobWithMatch["job"]) => {
+    bumpApplyCount();
+    window.open(job.jobUrl!, "_blank", "noopener,noreferrer");
+    setApplyFlow(null);
+    applyToJob(job.id)
+      .then(({ applicationId }) => setPendingReturn({ appId: applicationId, title: job.title, company: job.company }))
+      .catch((e: Error) => toast.error(e.message || "Could not start application"));
+  };
+
+  // Generate the 3 tailored docs for THIS job, then show the "ready" step (Download +
+  // Continue). The posting opens only when the user clicks Continue — so it never sits
+  // on a blank page while documents are still being generated.
+  const generateDocsThen = async (job: JobWithMatch["job"]) => {
+    setApplyFlow({ job, step: "generating" });
+    try {
+      const { applicationId } = await applyToJob(job.id);
+      await generateDocuments(applicationId); // resume + cover letter + cold email, tied to this job
+      const { application } = await getApplication(applicationId);
+      const docs = (application.documents ?? []).filter((d) =>
+        ["resume", "cover_letter", "cold_email"].includes(d.type),
+      );
+      // Hand the freshly tailored resume to the autofill extension (best-effort).
+      window.postMessage({ __jobpilot: "app", action: "prefill", applicationId }, window.location.origin);
+      setApplyFlow({ job, step: "ready", appId: applicationId, docs });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not generate documents");
+      setApplyFlow(null);
+    }
+  };
+
+  const downloadDoc = (doc: ApplicationDocument, job: JobWithMatch["job"]) => {
+    const base = `${job.company}_${job.title}_${doc.type}`.replace(/[^a-z0-9._-]/gi, "_");
+    if (doc.fileUrl) {
+      downloadFile(doc.fileUrl, `${base}.docx`).catch(() => toast.error("Download failed"));
+    } else if (doc.content) {
+      const url = URL.createObjectURL(new Blob([doc.content], { type: "text/markdown;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `${base}.md`; a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      toast.error("Nothing to download");
+    }
+  };
+
+  const DOC_META: Record<string, { label: string; icon: typeof FileText }> = {
+    resume: { label: "Tailored Resume", icon: FileText },
+    cover_letter: { label: "Cover Letter", icon: FileSignature },
+    cold_email: { label: "Cold Email", icon: Mail },
+  };
 
   // "Did you apply?" — fires when the user returns to this tab after we opened the posting.
   useEffect(() => {
@@ -430,7 +454,7 @@ export function JobsPage() {
     const q = search.trim().toLowerCase();
     const now = Date.now();
     const windows: Record<string, number> = { "24h": 864e5, week: 7 * 864e5, month: 30 * 864e5 };
-    return jobs.filter(({ job }) => {
+    const result = jobs.filter(({ job }) => {
       if (q && !`${job.title} ${job.company}`.toLowerCase().includes(q)) return false;
       if (location !== "ALL" && job.location !== location) return false;
       if (remote === "remote" && !job.isRemote) return false;
@@ -438,7 +462,14 @@ export function JobsPage() {
       if (posted !== "ALL" && job.postedAt && now - new Date(job.postedAt).getTime() > windows[posted]) return false;
       return true;
     });
-  }, [jobs, search, location, remote, posted]);
+    const fetchedAt = (j: JobWithMatch) => new Date(j.matchedAt).getTime();
+    result.sort((a, b) =>
+      sort === "score" ? b.score - a.score
+        : sort === "oldest" ? fetchedAt(a) - fetchedAt(b)
+        : fetchedAt(b) - fetchedAt(a),
+    );
+    return result;
+  }, [jobs, search, location, remote, posted, sort]);
 
   const selected = filtered.find((j) => j.job.id === selectedId) ?? null;
 
@@ -451,6 +482,9 @@ export function JobsPage() {
         </div>
         <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4" />Add Job</Button>
       </div>
+
+      {/* Live fetch progress (shows while an ingestion run is active) */}
+      <ActiveRunBanner />
 
       {/* Filter chip bar */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -477,6 +511,14 @@ export function JobsPage() {
             <SelectItem value="24h">Past 24h</SelectItem>
             <SelectItem value="week">Past week</SelectItem>
             <SelectItem value="month">Past month</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={sort} onValueChange={(v) => setSort(v as typeof sort)}>
+          <SelectTrigger className="h-9 w-auto gap-1.5 rounded-full"><ArrowDownUp className="h-3.5 w-3.5" /><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newest">Newest fetched</SelectItem>
+            <SelectItem value="oldest">Oldest fetched</SelectItem>
+            <SelectItem value="score">Best match</SelectItem>
           </SelectContent>
         </Select>
         <Button variant="outline" size="sm" className="h-9 shrink-0 rounded-full" onClick={() => setAllFiltersOpen(true)}>
@@ -509,13 +551,14 @@ export function JobsPage() {
                 onSelect={() => setSelectedId(item.job.id)}
                 onLike={() => setLiked((s) => { const n = new Set(s); if (n.has(item.job.id)) n.delete(item.job.id); else n.add(item.job.id); return n; })}
                 onHide={() => { if (item.job.id === selectedId) setSelectedId(null); removeMutation.mutate(item.job.id); }}
+                onApply={() => handleApply(item.job)}
               />
             ))}
           </div>
           {selected && (
             <div className="w-full xl:w-[38%]">
               <Card className="sticky top-4 h-[calc(100vh-7rem)] overflow-hidden p-0 transition-opacity duration-200">
-                <DetailPanel item={selected} onApply={() => setApplyJob(selected.job)} onClose={() => setSelectedId(null)} />
+                <DetailPanel item={selected} onApply={() => handleApply(selected.job)} onClose={() => setSelectedId(null)} />
               </Card>
             </div>
           )}
@@ -536,13 +579,102 @@ export function JobsPage() {
         </DialogContent>
       </Dialog>
 
-      {applyJob && (
-        <ApplyModal
-          job={applyJob}
-          onClose={() => setApplyJob(null)}
-          onApplied={(appId) => setPendingReturn({ appId, title: applyJob.title, company: applyJob.company })}
-        />
-      )}
+      {/* Multi-step apply flow: extension nudge → generate docs → generating */}
+      <Dialog open={!!applyFlow} onOpenChange={(o) => { if (!o && applyFlow?.step !== "generating") setApplyFlow(null); }}>
+        <DialogContent className="sm:max-w-md">
+          {applyFlow?.step === "extension" && (
+            <>
+              <DialogHeader><DialogTitle>Add the auto-apply extension?</DialogTitle></DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                The JobPilot Chrome extension autofills application forms and loads your tailored
+                resume on the job page. Add it once, or do it later.
+              </p>
+              <div className="mt-2 flex flex-col gap-2">
+                <Button onClick={() => { window.open(EXTENSION_STORE_URL, "_blank", "noopener,noreferrer"); checkExisting(applyFlow.job); }}>
+                  <Sparkles className="h-4 w-4" /> Add Chrome extension
+                </Button>
+                <Button variant="ghost" onClick={() => checkExisting(applyFlow.job)}>
+                  Do it later
+                </Button>
+              </div>
+            </>
+          )}
+
+          {applyFlow?.step === "checking" && (
+            <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" /> Checking for existing documents…
+            </div>
+          )}
+
+          {applyFlow?.step === "documents" && (
+            <>
+              <DialogHeader><DialogTitle>Generate tailored documents?</DialogTitle></DialogHeader>
+              <p className="text-sm">
+                <span className="font-semibold">{applyFlow.job.title}</span>
+                <span className="text-muted-foreground"> · {applyFlow.job.company}</span>
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                We&apos;ll create a resume, cover letter, and cold email tailored to <em>this</em> job,
+                attach them to it, and show them before you head to the posting.
+              </p>
+              <div className="mt-3 flex flex-col gap-2">
+                <Button onClick={() => generateDocsThen(applyFlow.job)}>
+                  <Sparkles className="h-4 w-4" /> Generate documents
+                </Button>
+                <Button variant="outline" onClick={() => applyWithoutDocs(applyFlow.job)}>
+                  <ExternalLink className="h-4 w-4" /> Do it later — just open posting
+                </Button>
+              </div>
+            </>
+          )}
+
+          {applyFlow?.step === "generating" && (
+            <>
+              <DialogHeader><DialogTitle>Tailoring your documents…</DialogTitle></DialogHeader>
+              <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                Generating resume, cover letter &amp; cold email for {applyFlow.job.company}…
+              </div>
+            </>
+          )}
+
+          {applyFlow?.step === "ready" && (
+            <>
+              <DialogHeader><DialogTitle>Documents ready</DialogTitle></DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                Tailored for <span className="font-medium text-foreground">{applyFlow.job.title}</span> at {applyFlow.job.company}.
+                Download them, then continue to the posting to apply.
+              </p>
+              <div className="mt-3 space-y-2">
+                {(applyFlow.docs ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No documents were produced (check your resume is uploaded).</p>
+                ) : (
+                  (applyFlow.docs ?? []).map((d) => {
+                    const meta = DOC_META[d.type] ?? { label: d.type, icon: FileText };
+                    const Icon = meta.icon;
+                    return (
+                      <div key={d.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                        <span className="flex items-center gap-2 text-sm font-medium"><Icon className="h-4 w-4 text-primary" />{meta.label}</span>
+                        <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => downloadDoc(d, applyFlow.job)}>
+                          <Download className="h-3.5 w-3.5" /> Download
+                        </Button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="mt-3 flex flex-col gap-2">
+                <Button onClick={() => openPosting(applyFlow.job, applyFlow.appId!)}>
+                  <ExternalLink className="h-4 w-4" /> Continue to apply
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => generateDocsThen(applyFlow.job)}>
+                  <Sparkles className="h-3.5 w-3.5" /> Regenerate documents
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* "Did you apply?" return banner (non-blocking) */}
       {banner && (

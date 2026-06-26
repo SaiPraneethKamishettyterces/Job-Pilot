@@ -12,7 +12,6 @@ import { getActivity, type ActivityEvent } from "@/services/api/activity";
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/jobs": "Jobs",
-  "/runs": "Application Runs",
   "/candidates": "Candidates",
   "/applied": "Applied Jobs",
   "/review": "Review Queue",

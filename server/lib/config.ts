@@ -260,6 +260,10 @@ export const config = {
     //   Playwright form-fill (requires Chromium in the image + ≥1GiB memory).
     mode: (optional("AUTOMATION_MODE", "assisted") === "auto" ? "auto" : "assisted") as "assisted" | "auto",
     autoSubmit: bool("AUTO_SUBMIT", false),
+    // Off (default): the ingestion pipeline only SHORTLISTS jobs; tailored documents
+    // are generated on demand when the user clicks Apply (one clean set per job).
+    // On: legacy behavior — bulk-generate documents for every shortlisted job per run.
+    pipelineAutogenDocs: bool("PIPELINE_AUTOGEN_DOCS", false),
     // Show the browser window while form-filling (for local testing/debugging).
     // Off in prod (headless). No effect unless AUTOMATION_MODE=auto.
     headed: bool("PLAYWRIGHT_HEADED", false),

@@ -72,87 +72,76 @@ export async function generateApplicationDocuments(applicationId: string): Promi
   const documentTypes: string[] = [];
   let usedAi = false;
   const genCtx = { userId, runId: application.runId, applicationId };
+  const hasBaseResume = Boolean(profile.baseResumeText?.trim());
 
-  // 1) Tailor the resume (skill chokepoint). Non-fatal if it fails.
+  // Re-generating must not pile up duplicate rows for the same app/type.
+  const replaceDoc = async (type: string, data: Record<string, unknown>) => {
+    await prisma.applicationDocument.deleteMany({ where: { applicationId, type } });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await prisma.applicationDocument.create({ data: { applicationId, type, ...data } as any });
+  };
+
+  // 1–3) Run the three INDEPENDENT generations concurrently. Resume tailoring is a
+  // remote Claude call; cover letter + cold email are local-model calls. Sequentially
+  // the wall time is their sum (>1 min); concurrently it's ~the slowest single call.
+  // Same prompts + models → identical output quality, just no idle waiting.
+  const [tailored, cover, email] = await Promise.all([
+    hasBaseResume
+      ? tailorResume({
+          baseResumeText: profile.baseResumeText!,
+          jobDescription,
+          targetRole: roleTitle,
+          userInstructions: profile.coverLetterTemplate ?? null,
+          contactOverrides: contactFromProfile(profile),
+          storageJobKey: ["applications", userId, applicationId].join("/"),
+          ...genCtx,
+        }).catch((err) => { logger.warn({ applicationId, err: String(err) }, "resume_tailor_failed"); return null; })
+      : Promise.resolve(null),
+    generateCoverLetter(jobDescription, profile, genCtx)
+      .catch((err) => { logger.warn({ applicationId, err: String(err) }, "cover_letter_failed"); return null; }),
+    generateColdEmail(roleTitle, company, jobDescription, profile, genCtx)
+      .catch((err) => { logger.warn({ applicationId, err: String(err) }, "cold_email_failed"); return null; }),
+  ]);
+
+  // Persist resume.
   let resumeRef: { storageKey: string | null; downloadUrl: string | null; filename: string | null } | null = null;
-  if (profile.baseResumeText?.trim()) {
-    try {
-      const tailored = await tailorResume({
-        baseResumeText: profile.baseResumeText,
-        jobDescription,
-        targetRole: roleTitle,
-        userInstructions: profile.coverLetterTemplate ?? null,
-        contactOverrides: contactFromProfile(profile),
-        storageJobKey: ["applications", userId, applicationId].join("/"),
-        ...genCtx,
-      });
-      if (tailored) {
-        usedAi = usedAi || tailored.usedAi;
-        resumeRef = {
-          storageKey: tailored.artifact.key,
-          downloadUrl: tailored.artifact.downloadPath,
-          filename: "tailored_resume.docx",
-        };
-        await prisma.applicationDocument.create({
-          data: {
-            applicationId,
-            type: "resume",
-            // fileUrl stays the DOCX (autofill/extension upload it). PDF is the
-            // human-friendly download surfaced in the UI alongside it.
-            fileUrl: tailored.artifact.downloadPath,
-            content: tailored.markdown,
-            metadataJson: {
-              analysis: tailored.analysis,
-              report: analysisReportMarkdown(tailored.analysis),
-              generatedBy: tailored.model,
-              files: {
-                docxUrl: tailored.artifact.downloadPath,
-                pdfUrl: tailored.pdfArtifact.downloadPath,
-              },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any,
-          },
-        });
-        documentTypes.push("resume");
-        await prisma.application.update({
-          where: { id: applicationId },
-          data: { tailoredResumeUrl: tailored.artifact.downloadPath },
-        });
-      }
-    } catch (err) {
-      logger.warn({ applicationId, err: String(err) }, "resume_tailor_failed");
-      warnings.push("Resume tailoring failed; user must attach a resume.");
-    }
-  } else {
+  if (tailored) {
+    usedAi = usedAi || tailored.usedAi;
+    resumeRef = { storageKey: tailored.artifact.key, downloadUrl: tailored.artifact.downloadPath, filename: "tailored_resume.docx" };
+    await replaceDoc("resume", {
+      // fileUrl stays the DOCX (autofill/extension upload it). PDF is the
+      // human-friendly download surfaced in the UI alongside it.
+      fileUrl: tailored.artifact.downloadPath,
+      content: tailored.markdown,
+      metadataJson: {
+        analysis: tailored.analysis,
+        report: analysisReportMarkdown(tailored.analysis),
+        generatedBy: tailored.model,
+        files: { docxUrl: tailored.artifact.downloadPath, pdfUrl: tailored.pdfArtifact.downloadPath },
+      },
+    });
+    documentTypes.push("resume");
+    await prisma.application.update({ where: { id: applicationId }, data: { tailoredResumeUrl: tailored.artifact.downloadPath } });
+  } else if (!hasBaseResume) {
     warnings.push("No base resume text on file; user must upload/attach a resume.");
+  } else {
+    warnings.push("Resume tailoring failed; user must attach a resume.");
   }
 
-  // 2) Cover letter (text).
-  try {
-    const cover = await generateCoverLetter(jobDescription, profile, genCtx);
-    if (cover) {
-      usedAi = true;
-      await prisma.applicationDocument.create({
-        data: { applicationId, type: "cover_letter", content: cover },
-      });
-      await prisma.application.update({ where: { id: applicationId }, data: { coverLetterUrl: null } });
-      documentTypes.push("cover_letter");
-    }
-  } catch (err) {
-    logger.warn({ applicationId, err: String(err) }, "cover_letter_failed");
+  // Persist cover letter.
+  if (cover) {
+    usedAi = true;
+    await replaceDoc("cover_letter", { content: cover });
+    await prisma.application.update({ where: { id: applicationId }, data: { coverLetterUrl: null } });
+    documentTypes.push("cover_letter");
   }
 
-  // 3) Cold outreach email (text on the application).
-  try {
-    const email = await generateColdEmail(roleTitle, company, jobDescription, profile, genCtx);
-    if (email) {
-      usedAi = true;
-      await prisma.application.update({ where: { id: applicationId }, data: { coldEmailText: email } });
-      await prisma.applicationDocument.create({ data: { applicationId, type: "cold_email", content: email } });
-      documentTypes.push("cold_email");
-    }
-  } catch (err) {
-    logger.warn({ applicationId, err: String(err) }, "cold_email_failed");
+  // Persist cold email.
+  if (email) {
+    usedAi = true;
+    await prisma.application.update({ where: { id: applicationId }, data: { coldEmailText: email } });
+    await replaceDoc("cold_email", { content: email });
+    documentTypes.push("cold_email");
   }
 
   // 4) Autofill package (the extension/automation contract).
@@ -163,9 +152,7 @@ export async function generateApplicationDocuments(applicationId: string): Promi
     resume: resumeRef,
   });
   warnings.push(...pkg.warnings);
-  await prisma.applicationDocument.create({
-    data: { applicationId, type: "application_package", content: JSON.stringify(pkg) },
-  });
+  await replaceDoc("application_package", { content: JSON.stringify(pkg) });
   documentTypes.push("application_package");
 
   // 5) Compute status and finalize.

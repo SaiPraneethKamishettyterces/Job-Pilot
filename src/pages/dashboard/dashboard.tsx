@@ -1,4 +1,4 @@
-import { Briefcase, Play, CheckSquare, TrendingUp, Clock, Target, DollarSign, Zap, Loader2, ArrowRight } from "lucide-react";
+import { Briefcase, CheckSquare, TrendingUp, Clock, Target, DollarSign, Loader2, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { getDashboardStats, type DashboardStats } from "@/services/api";
+import { StartRunButton, RunHistory, ActiveRunBanner } from "@/components/ingestion/ingestion";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "success" | "warning" | "info" | "secondary" | "destructive" | "outline" }> = {
   APPLIED: { label: "Applied", variant: "success" },
@@ -99,12 +100,12 @@ export function DashboardPage() {
             </h2>
             <p className="mt-1.5 text-sm text-muted-foreground">Here's what's happening with your job search today.</p>
           </div>
-          <Button onClick={() => navigate("/runs")} size="lg" className="shrink-0">
-            <Zap className="h-4 w-4" />
-            Start a Run
-          </Button>
+          <StartRunButton size="lg" className="shrink-0" />
         </div>
       </Card>
+
+      {/* Live fetch progress after Start a Run */}
+      <ActiveRunBanner />
 
       {isError && (
         <div className="rounded-card border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-red-300 light:text-red-600">
@@ -280,10 +281,7 @@ export function DashboardPage() {
               <CardTitle className="text-base">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start gap-3" onClick={() => navigate("/runs")}>
-                <Play className="h-4 w-4 text-primary" />
-                Start new run
-              </Button>
+              <StartRunButton variant="outline" size="default" className="w-full justify-start gap-3" />
               <Button variant="outline" className="w-full justify-start gap-3" onClick={() => navigate("/resume")}>
                 <Briefcase className="h-4 w-4 text-primary" />
                 Update resume
@@ -305,6 +303,9 @@ export function DashboardPage() {
           </Card>
         </div>
       </div>
+
+      {/* Ingestion run history (folded in from the old /runs page) */}
+      <RunHistory />
     </div>
   );
 }

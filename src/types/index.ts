@@ -209,6 +209,8 @@ export interface Application {
   resumeModel?: string | null;
   /** When the linked job posting was scraped/ingested (ISO). For a freshness label. */
   scrapedAt?: string | null;
+  /** When the employer posted the job (ISO), if known. */
+  postedAt?: string | null;
 }
 
 // ─── Run ─────────────────────────────────────────────────────────────────────

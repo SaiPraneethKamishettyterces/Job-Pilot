@@ -39,9 +39,9 @@ statsRouter.get("/", requireAuth, asyncHandler(async (req: AuthRequest, res) => 
       prisma.application.count({
         where: { userId, status: "NEEDS_APPROVAL" },
       }),
-      // Applications this week
+      // Jobs the user actually applied to this week (not just pipeline-created)
       prisma.application.count({
-        where: { userId, createdAt: { gte: weekStart } },
+        where: { userId, status: "APPLIED", appliedAt: { gte: weekStart } },
       }),
       // Last 5 applications with match score
       prisma.application.findMany({

@@ -5,12 +5,20 @@ import type { TokenSummary } from "./token-tracker.js";
 // Persist a Claude call's token/cost summary to AIUsageEvent. Governance (CLAUDE.md)
 // requires every model call to feed the cost ledger. Best-effort: a logging
 // failure must never break the request that produced real work.
+export interface UsageBreakdown {
+  /** Input token estimate per prompt component, apportioned to the billed input total. */
+  input: Record<string, number>;
+  /** Output token estimate per generated section, apportioned to the billed output total. */
+  output: Record<string, number>;
+}
+
 export async function recordUsage(args: {
   userId: string;
   featureName: string;
   usage: TokenSummary;
   runId?: string | null;
   applicationId?: string | null;
+  breakdown?: UsageBreakdown | null;
 }): Promise<void> {
   try {
     await prisma.aIUsageEvent.create({
@@ -24,6 +32,7 @@ export async function recordUsage(args: {
         outputTokens: args.usage.outputTokens,
         cacheReadTokens: args.usage.cacheReadTokens,
         estimatedCostUsd: args.usage.estimatedCostUSD,
+        breakdownJson: args.breakdown ? (args.breakdown as unknown as object) : undefined,
       },
     });
   } catch (err) {
